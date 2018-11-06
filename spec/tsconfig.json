@@ -1,0 +1,39 @@
+{
+    "compilerOptions": {
+        "noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitAny": true,
+        "noImplicitReturns": true,
+        "allowSyntheticDefaultImports": true,
+        "declaration": true,
+        "stripInternal": true,
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true,
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "target": "es6",
+        "outDir": "./build",
+        "rootDir": "..",
+        "sourceMap": true,
+        "lib": [
+            "es2015",
+            "dom"
+        ]
+    },
+    "include": [
+        "./**/*.ts"
+    ],
+    "exclude": [
+        "support"
+    ],
+    "typeRoots": [
+        "../node_modules/@types"
+    ],
+    "atom": {
+        "rewriteTsConfig": false
+    },
+    "angularCompilerOptions": {
+        "genDir": "build",
+        "skipTemplateCodegen": true
+    }
+}

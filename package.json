@@ -1,0 +1,40 @@
+{
+  "name": "@lithiumjs/ngx-virtual-scroll",
+  "description": "A fast virtual scrolling solution for Angular that natively supports items with unequal heights. Built with @lithiumjs/angular.",
+  "repository": "https://github.com/lVlyke/lithium-ngx-virtual-scroll",
+  "version": "0.0.1",
+  "main": "index.js",
+  "author": "Mychal Thompson <mychalrthompson@gmail.com>",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "prebuild:js": "yarn test",
+    "build:js": "node ./scripts/build.js",
+    "pretest": "node ./scripts/pretest.js",
+    "test": "node ./scripts/test.js"
+  },
+  "peerDependencies": {
+    "@angular/core": "6.x.x - 7.x.x",
+    "@angular/common": "6.x.x - 7.x.x",
+    "@lithiumjs/angular": ">=2.0.0",
+    "rxjs": "6.x.x"
+  },
+  "devDependencies": {
+    "@angular/compiler": "7.0.2",
+    "@angular/compiler-cli": "7.0.2",
+    "@angular/core": "7.0.2",
+    "@angular/common": "7.0.2",
+    "@lithiumjs/angular": "^2.2.0-rc.0",
+    "@types/jasmine": "^2.8.6",
+    "detest-bdd": "^1.1.0",
+    "fs-extra": "^5.0.0",
+    "istanbul": "^0.4.5",
+    "istanbul-cobertura-badger": "^1.3.1",
+    "jasmine": "^3.1.0",
+    "rxjs": "~6.2.0",
+    "source-map-support": "^0.5.3",
+    "typescript": "~3.1.1",
+    "zone.js": "0.8.26"
+  },
+  "dependencies": {}
+}
