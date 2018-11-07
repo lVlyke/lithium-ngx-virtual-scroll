@@ -7,7 +7,7 @@ import {
 } from "@angular/core";
 import { AotAware, StateEmitter, OnDestroy } from "@lithiumjs/angular";
 import { Subject, Observable, combineLatest, of, forkJoin, fromEvent } from "rxjs";
-import { map, throttleTime, withLatestFrom, filter, mergeMap, take, delay } from "rxjs/operators";
+import { map, throttleTime, withLatestFrom, filter, mergeMap, take, delay, tap } from "rxjs/operators";
 
 @Component({
     selector: "li-virtual-scroll",
@@ -37,6 +37,14 @@ export class VirtualScroll extends AotAware {
     @StateEmitter({ initialValue: VirtualScroll.DEFAULT_BUFFER_LENGTH })
     private readonly bufferLength$: Subject<number>;
 
+    @Input("scrollContainer")
+    @StateEmitter()
+    private readonly scrollContainer$: Subject<HTMLElement>;
+
+    @Input("eventCapture")
+    @StateEmitter({ initialValue: false })
+    private readonly eventCapture$: Subject<boolean>;
+
     @StateEmitter({ initialValue: { x: 0, y: 0 } })
     private readonly scrollPosition$: Subject<VirtualScroll.ScrollPosition>;
 
@@ -48,21 +56,23 @@ export class VirtualScroll extends AotAware {
     @ContentChild(TemplateRef)
     public readonly templateRef: TemplateRef<any>;
 
-    constructor({ nativeElement: listElement }: ElementRef) {
+    constructor({ nativeElement: listElement }: ElementRef<HTMLElement>) {
         super();
-
-        const onScroll$ = fromEvent(document, "scroll", { capture: true });
 
         this.listElement = listElement;
 
-        const scrollSubscription = onScroll$.subscribe((scrollEvent) => {
-            // TODO - Check if scroll is relevant to list
+        this.scrollContainer$.next(listElement);
+
+        const scrollSubscription = combineLatest(
+            this.scrollContainer$,
+            this.eventCapture$
+        ).pipe(tap(([scrollContainer]) => this.applyScrollContainerStyles(scrollContainer === listElement)))
+        .pipe(mergeMap(([scrollContainer, capture]) => fromEvent(scrollContainer, "scroll", { capture })))
+        .subscribe((scrollEvent) => {
             this.scrollPosition$.next({ x: scrollEvent.srcElement.scrollLeft, y: scrollEvent.srcElement.scrollTop });
         });
 
-        this.onDestroy$.subscribe(() => {
-            scrollSubscription.unsubscribe();
-        });
+        this.onDestroy$.subscribe(() => scrollSubscription.unsubscribe());
 
         this.items$
             .pipe(map((items): VirtualScroll.RenderedItem[] => items.map((item) => ({
@@ -81,16 +91,10 @@ export class VirtualScroll extends AotAware {
             this.scrollPosition$.pipe(throttleTime(50)) /* TODO - Make customizable */,
             this.renderedItems$
         ).pipe(filter(([, renderedItems]) => renderedItems.length > 0))
-        .pipe(withLatestFrom(this.bufferLength$))
+        .pipe(withLatestFrom(this.bufferLength$, this.scrollContainer$))
         .pipe(delay(0)) // Wait for DOM rendering to occur
-        .pipe(mergeMap(([[scrollPosition, renderedItems], bufferLength]) => {
+        .pipe(mergeMap(([[scrollPosition, renderedItems], bufferLength, scrollContainer]) => {
             const [bestRenderedIndex, renderedElement] = this.findBestOnScreenItem(renderedItems);
-            const renderedBounds: VirtualScroll.Rect = {
-                left: scrollPosition.x,
-                top: scrollPosition.y,
-                right: scrollPosition.x + listElement.clientWidth,
-                bottom: scrollPosition.y + listElement.clientHeight
-            };
 
             if (renderedElement) {
                 const offset = { x: renderedElement.offsetLeft, y: renderedElement.offsetTop };
@@ -99,6 +103,12 @@ export class VirtualScroll extends AotAware {
                     top: offset.y,
                     right: offset.x + renderedElement.clientWidth,
                     bottom: offset.y + renderedElement.clientHeight
+                };
+                const renderedBounds: VirtualScroll.Rect = {
+                    left: scrollPosition.x,
+                    top: scrollPosition.y,
+                    right: scrollPosition.x + scrollContainer.clientWidth,
+                    bottom: scrollPosition.y + scrollContainer.clientHeight
                 };
                 const bufferLengthPx = window.innerHeight * bufferLength;
 
@@ -117,19 +127,33 @@ export class VirtualScroll extends AotAware {
     }
 
     public checkScroll(scrollPosition?: VirtualScroll.ScrollPosition): void {
-       scrollPosition ? of(scrollPosition) : this.scrollPosition$.pipe(take(1))
+       (scrollPosition ? of(scrollPosition) : this.scrollPosition$.pipe(take(1)))
             .subscribe(scrollPosition => this.scrollPosition$.next(scrollPosition));
+    }
+
+    private applyScrollContainerStyles(apply: boolean) {
+        this.listElement.style.overflowY = apply ? "scroll" : "initial";
+        this.listElement.style.display = apply ? "block" : "initial";
     }
 
     private findBestOnScreenItem(renderedItems: VirtualScroll.RenderedItem[]): [number, HTMLElement] {
         const minRenderedIndex = renderedItems.findIndex(renderedItem => renderedItem.visible);
         const maxRenderedIndex = minRenderedIndex + renderedItems.slice(minRenderedIndex).findIndex(renderedItem => !renderedItem.visible);
 
+        // Grab any rendered element (that is currently being rendered in the DOM)
         let bestRenderedIndex = minRenderedIndex;
         let renderedElement: HTMLElement;
         do {
             renderedElement = this.getRenderedElement(bestRenderedIndex);
         } while (!renderedElement && ++bestRenderedIndex < (maxRenderedIndex === -1 ? renderedItems.length : maxRenderedIndex));
+ 
+        if (!renderedElement) {
+            // Fallback to looking behind the min rendered index (sometimes needed if user is scrolling very fast)
+            bestRenderedIndex = minRenderedIndex;
+            while (!renderedElement && --bestRenderedIndex >= 0) {
+                renderedElement = this.getRenderedElement(bestRenderedIndex);
+            }
+        }
 
         return [bestRenderedIndex, renderedElement];
     }
@@ -158,7 +182,7 @@ export class VirtualScroll extends AotAware {
         }
 
         if (item.visible) {
-            const renderedElement: HTMLElement = this.listElement.querySelector(`[data-li-virtual-index="${index}"]`);
+            const renderedElement = this.getRenderedElement(index);
             const offset = { x: renderedElement.offsetLeft, y: renderedElement.offsetTop };
             
             // Update the element dimensions based on the current element
