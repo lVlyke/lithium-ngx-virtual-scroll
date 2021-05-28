@@ -8,7 +8,7 @@ import {
     ChangeDetectorRef
 } from "@angular/core";
 import { LiComponent, StateEmitter, OnDestroy, AutoPush } from "@lithiumjs/angular";
-import { Subject, Observable, combineLatest, of, forkJoin, fromEvent } from "rxjs";
+import { Subject, Observable, combineLatest, of, forkJoin, fromEvent, asyncScheduler } from "rxjs";
 import { map, throttleTime, filter, mergeMap, take, delay, tap } from "rxjs/operators";
 
 export function DEFAULT_SCROLL_POSITION(): VirtualScroll.ScrollPosition {
@@ -24,18 +24,23 @@ export function EMPTY_ARRAY<T>(): T[] {
     changeDetection: ChangeDetectionStrategy.OnPush,
     template: `
         <ng-container *ngFor="let renderedItem of renderedItems; let i = index">
-            <ng-container *ngIf="renderedItem.visible">
-                <div [attr.data-li-virtual-index]="i">
+            <ng-container *ngIf="renderedItem.visible; else placeholder">
+                <span class="li-virtual-item" [attr.data-li-virtual-index]="i">
                     <ng-container *ngTemplateOutlet="templateRef; context: { $implicit: renderedItem.item, index: i }">
                     </ng-container>
-                </div>
+                </span>
             </ng-container>
+
+            <ng-template #placeholder>
+                <div [ngStyle]="{ 'width': referenceWidth + 'px', 'height': referenceHeight + 'px'  }"></div>
+            </ng-template>
         </ng-container>
     `
 })
 export class VirtualScroll extends LiComponent {
 
     private static readonly DEFAULT_BUFFER_LENGTH = 3;
+    private static readonly DEFAULT_SCROLL_THROTTLE_MS = 50;
 
     @ContentChild(TemplateRef)
     public readonly templateRef: TemplateRef<any>;
@@ -69,6 +74,12 @@ export class VirtualScroll extends LiComponent {
 
     @StateEmitter({ initial: EMPTY_ARRAY })
     private readonly renderedItems$: Subject<VirtualScroll.RenderedItem[]>;
+
+    @StateEmitter({ initialValue: 0 })
+    private readonly referenceWidth$: Subject<number>;
+
+    @StateEmitter({ initialValue: 0 })
+    private readonly referenceHeight$: Subject<number>;
 
     @OnDestroy()
     private readonly onDestroy$: Observable<void>;
@@ -116,7 +127,11 @@ export class VirtualScroll extends LiComponent {
         ).subscribe(renderedItems => renderedItems[0].visible = true);
 
         combineLatest([
-            this.scrollPosition$.pipe(throttleTime(50, undefined, { leading: true, trailing: true })) /* TODO - Make customizable */,
+            this.scrollPosition$.pipe(throttleTime(
+                VirtualScroll.DEFAULT_SCROLL_THROTTLE_MS, // TODO - Make customizable
+                asyncScheduler,
+                { leading: true, trailing: true }
+            )),
             this.renderedItems$,
             this.scrollContainer$,
             this.bufferLength$
@@ -124,9 +139,19 @@ export class VirtualScroll extends LiComponent {
             filter(([, renderedItems]) => renderedItems.length > 0),
             delay(0), // Wait for DOM rendering to occur
             mergeMap(([scrollPosition, renderedItems, scrollContainer, bufferLength]) => {
+                const renderedBounds: VirtualScroll.Rect = {
+                    left: scrollPosition.x,
+                    top: scrollPosition.y,
+                    right: scrollPosition.x + scrollContainer.clientWidth,
+                    bottom: scrollPosition.y + scrollContainer.clientHeight
+                };
                 const [bestRenderedIndex, renderedElement] = this.findBestOnScreenItem(renderedItems);
 
                 if (renderedElement) {
+                    // TODO
+                    this.referenceWidth$.next(renderedElement.clientWidth);
+                    this.referenceHeight$.next(renderedElement.clientHeight);
+
                     const offset = { x: renderedElement.offsetLeft, y: renderedElement.offsetTop };
                     const elementDimensions = {
                         left: offset.x,
@@ -134,21 +159,34 @@ export class VirtualScroll extends LiComponent {
                         right: offset.x + renderedElement.clientWidth,
                         bottom: offset.y + renderedElement.clientHeight
                     };
-                    const renderedBounds: VirtualScroll.Rect = {
-                        left: scrollPosition.x,
-                        top: scrollPosition.y,
-                        right: scrollPosition.x + scrollContainer.clientWidth,
-                        bottom: scrollPosition.y + scrollContainer.clientHeight
-                    };
+                    
                     const bufferLengthPx = (scrollContainer.clientHeight || window.innerHeight) * bufferLength;
 
                     renderedBounds.top -= bufferLengthPx;
                     renderedBounds.bottom += bufferLengthPx;
 
                     return forkJoin([
-                        this.walkList(renderedItems, renderedBounds, bestRenderedIndex, 1, elementDimensions),
-                        this.walkList(renderedItems, renderedBounds, bestRenderedIndex, -1, elementDimensions)
-                    ]);
+                        this.walkList(renderedItems, renderedBounds, bestRenderedIndex, 1, true, elementDimensions),
+                        this.walkList(renderedItems, renderedBounds, bestRenderedIndex, -1, true, elementDimensions)
+                    ]).pipe(
+                        delay(VirtualScroll.DEFAULT_SCROLL_THROTTLE_MS * 2),
+                        tap(() => {
+                            // Re-check the rendering status if there are no rendered items or if the scroll position changed quickly
+                            if (this.listElement.scrollLeft !== scrollPosition.x
+                             || this.listElement.scrollTop !== scrollPosition.y
+                             || this.getAllRenderedElements().length === 0) {
+                                this.scrollPosition$.next({ x: this.listElement.scrollLeft, y: this.listElement.scrollTop });
+                            }
+                        })
+                    );
+                } else if (renderedItems.length > 0) {
+                    // If there are no rendered items, walk the list from the beginning to find the rendered segment
+                    return this.walkList(renderedItems, renderedBounds, 0, 1, false, {
+                        left: 0,
+                        top: 0,
+                        right: this.referenceWidth,
+                        bottom: this.referenceHeight
+                    });
                 } else {
                     return of(null);
                 }
@@ -192,6 +230,10 @@ export class VirtualScroll extends LiComponent {
         return this.listElement.querySelector(`[data-li-virtual-index="${renderedIndex}"]`);
     }
 
+    private getAllRenderedElements(): NodeListOf<HTMLElement> {
+        return this.listElement.querySelectorAll(".li-virtual-item");
+    }
+
     private intersects(a: VirtualScroll.Rect, b: VirtualScroll.Rect): boolean {
         return b.left <= a.right && b.right >= a.left && b.top <= a.bottom && b.bottom >= a.top;
     }
@@ -201,17 +243,18 @@ export class VirtualScroll extends LiComponent {
         renderedBounds: VirtualScroll.Rect,
         index: number,
         direction: 1 | -1,
+        stopOnUnrendered: boolean,
         lastElementDimensions?: VirtualScroll.Rect
     ): Observable<VirtualScroll.RenderedItem[]> {
         const item = renderedItems[index];
         const nextIndex = index + direction;
 
         // Stop walking the list if we hit an unrendered segment
-        if (!lastElementDimensions && !item.visible) {
+        if (stopOnUnrendered && !lastElementDimensions && !item?.visible) {
             return of(renderedItems);
         }
 
-        if (item.visible) {
+        if (item?.visible) {
             const renderedElement = this.getRenderedElement(index);
             const offset = { x: renderedElement.offsetLeft, y: renderedElement.offsetTop };
             
@@ -233,9 +276,20 @@ export class VirtualScroll extends LiComponent {
                 x: lastElementDimensions.right - lastElementDimensions.left,
                 y: lastElementDimensions.bottom - lastElementDimensions.top,
             };
+            const offsetX = lastElementSize.x * direction;
             const offsetY = lastElementSize.y * direction;
-            lastElementDimensions.top += offsetY;
-            lastElementDimensions.bottom += offsetY;
+
+            // Walk to the next item in the list
+            if (lastElementDimensions.right + offsetX <= this.listElement.scrollWidth && lastElementDimensions.left + offsetX >= 0) {
+                lastElementDimensions.left += offsetX;
+                lastElementDimensions.right += offsetX;
+            } else {
+                lastElementDimensions.left = direction > 0 ? 0 : this.listElement.scrollWidth;
+                lastElementDimensions.right = lastElementDimensions.left + offsetX;
+
+                lastElementDimensions.top += offsetY;
+                lastElementDimensions.bottom += offsetY;
+            }
 
             // If the current item should be rendered, make it visible
             if (this.intersects(renderedBounds, lastElementDimensions)) {
@@ -245,14 +299,21 @@ export class VirtualScroll extends LiComponent {
                 // Wait for the DOM element to render, then continue walking the list
                 return of(null).pipe(
                     delay(0),
-                    mergeMap(() => this.walkList(renderedItems, renderedBounds, index, direction))
+                    mergeMap(() => this.walkList(renderedItems, renderedBounds, index, direction, stopOnUnrendered, lastElementDimensions))
                 );
             }
         }
 
         // Keep walking the list (unless we hit the end of the array)
         if (nextIndex >= 0 && nextIndex < renderedItems.length) {
-            return this.walkList(renderedItems, renderedBounds, nextIndex, direction, item.visible ? lastElementDimensions : undefined);
+            return this.walkList(
+                renderedItems,
+                renderedBounds,
+                nextIndex,
+                direction,
+                stopOnUnrendered,
+                (!stopOnUnrendered || item?.visible) ? lastElementDimensions : undefined
+            );
         } else {
             return of(renderedItems);
         }
