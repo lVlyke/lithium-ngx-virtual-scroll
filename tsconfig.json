@@ -1,30 +1,26 @@
 {
     "compilerOptions": {
         "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "noImplicitAny": true,
+		"noUnusedParameters": true,
+		"noImplicitAny": true,
         "noImplicitReturns": true,
         "allowSyntheticDefaultImports": true,
-        "declaration": true,
         "stripInternal": true,
-        "emitDecoratorMetadata": true,
+        "emitDecoratorMetadata": false,
         "experimentalDecorators": true,
-        "module": "commonjs",
+        "declaration": true,
+        "module": "es2015",
         "moduleResolution": "node",
-        "target": "es5",
-        "outDir": "./dist",
-        "rootDir": "./src",
         "sourceMap": true,
+        "target": "es2015",
         "lib": [
-            "es2018",
+            "esnext",
             "dom"
-        ]
+        ],
+        "outDir": "./dist"
     },
     "include": [
         "src/**/*.ts"
-    ],
-    "exclude": [
-        "node_modules"
     ],
     "typeRoots": [
         "node_modules/@types"
@@ -33,7 +29,6 @@
         "rewriteTsConfig": false
     },
     "angularCompilerOptions": {
-        "genDir": "dist",
         "skipTemplateCodegen": true
     }
 }

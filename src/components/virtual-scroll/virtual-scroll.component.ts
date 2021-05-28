@@ -3,127 +3,157 @@ import {
     Input,
     ContentChild,
     TemplateRef,
-    ElementRef
+    ElementRef,
+    ChangeDetectionStrategy,
+    ChangeDetectorRef
 } from "@angular/core";
-import { AotAware, StateEmitter, OnDestroy } from "@lithiumjs/angular";
+import { LiComponent, StateEmitter, OnDestroy, AutoPush } from "@lithiumjs/angular";
 import { Subject, Observable, combineLatest, of, forkJoin, fromEvent } from "rxjs";
-import { map, throttleTime, withLatestFrom, filter, mergeMap, take, delay, tap } from "rxjs/operators";
+import { map, throttleTime, filter, mergeMap, take, delay, tap } from "rxjs/operators";
+
+export function DEFAULT_SCROLL_POSITION(): VirtualScroll.ScrollPosition {
+    return { x: 0, y: 0 };
+}
+
+export function EMPTY_ARRAY<T>(): T[] {
+    return [];
+}
 
 @Component({
     selector: "li-virtual-scroll",
+    changeDetection: ChangeDetectionStrategy.OnPush,
     template: `
         <ng-container *ngFor="let renderedItem of renderedItems; let i = index">
             <ng-container *ngIf="renderedItem.visible">
                 <div [attr.data-li-virtual-index]="i">
-                    <ng-container *ngTemplateOutlet="templateRef; context: { $implicit: renderedItem.item }">
+                    <ng-container *ngTemplateOutlet="templateRef; context: { $implicit: renderedItem.item, index: i }">
                     </ng-container>
                 </div>
             </ng-container>
         </ng-container>
     `
 })
-export class VirtualScroll extends AotAware {
+export class VirtualScroll extends LiComponent {
 
     private static readonly DEFAULT_BUFFER_LENGTH = 3;
-
-    @OnDestroy()
-    private readonly onDestroy$: Observable<void>;
-
-    @Input("items")
-    @StateEmitter({ initialValue: [] })
-    private readonly items$: Subject<any[]>;
-
-    @Input("bufferLength")
-    @StateEmitter({ initialValue: VirtualScroll.DEFAULT_BUFFER_LENGTH })
-    private readonly bufferLength$: Subject<number>;
-
-    @Input("scrollContainer")
-    @StateEmitter()
-    private readonly scrollContainer$: Subject<HTMLElement>;
-
-    @Input("eventCapture")
-    @StateEmitter({ initialValue: false })
-    private readonly eventCapture$: Subject<boolean>;
-
-    @StateEmitter({ initialValue: { x: 0, y: 0 } })
-    private readonly scrollPosition$: Subject<VirtualScroll.ScrollPosition>;
-
-    @StateEmitter({ initialValue: [] })
-    private readonly renderedItems$: Subject<VirtualScroll.RenderedItem[]>;
-
-    private readonly listElement: HTMLElement;
 
     @ContentChild(TemplateRef)
     public readonly templateRef: TemplateRef<any>;
 
-    constructor({ nativeElement: listElement }: ElementRef<HTMLElement>) {
+    @Input()
+    public items: any[];
+
+    @StateEmitter({ propertyName: "items", initial: EMPTY_ARRAY })
+    public readonly items$: Subject<any[]>;
+
+    @Input()
+    public bufferLength: number;
+
+    @StateEmitter({ propertyName: "bufferLength", initialValue: VirtualScroll.DEFAULT_BUFFER_LENGTH })
+    public readonly bufferLength$: Subject<number>;
+
+    @Input()
+    public scrollContainer: HTMLElement;
+
+    @StateEmitter({ propertyName: "scrollContainer" })
+    public readonly scrollContainer$: Subject<HTMLElement>;
+
+    @Input()
+    public eventCapture: boolean;
+
+    @StateEmitter({ propertyName: "eventCapture", initialValue: false })
+    public readonly eventCapture$: Subject<boolean>;
+
+    @StateEmitter({ initial: DEFAULT_SCROLL_POSITION })
+    private readonly scrollPosition$: Subject<VirtualScroll.ScrollPosition>;
+
+    @StateEmitter({ initial: EMPTY_ARRAY })
+    private readonly renderedItems$: Subject<VirtualScroll.RenderedItem[]>;
+
+    @OnDestroy()
+    private readonly onDestroy$: Observable<void>;
+
+    private readonly listElement: HTMLElement;
+
+    constructor(
+        private readonly cdRef: ChangeDetectorRef,
+        { nativeElement: listElement }: ElementRef<HTMLElement>
+    ) {
         super();
+
+        AutoPush.enable(this, cdRef);
 
         this.listElement = listElement;
 
         this.scrollContainer$.next(listElement);
 
-        const scrollSubscription = combineLatest(
+        const scrollSubscription = combineLatest([
             this.scrollContainer$,
             this.eventCapture$
-        ).pipe(tap(([scrollContainer]) => this.applyScrollContainerStyles(scrollContainer === listElement)))
-        .pipe(mergeMap(([scrollContainer, capture]) => fromEvent(scrollContainer, "scroll", { capture })))
-        .subscribe((scrollEvent) => {
-            this.scrollPosition$.next({ x: scrollEvent.srcElement.scrollLeft, y: scrollEvent.srcElement.scrollTop });
+        ]).pipe(
+            tap(([scrollContainer]) => this.applyScrollContainerStyles(scrollContainer === listElement)),
+            mergeMap(([scrollContainer, capture]) => fromEvent<MouseEvent>(scrollContainer, "scroll", { capture }))
+        ).subscribe((scrollEvent) => {
+            this.scrollPosition$.next({
+                x: (scrollEvent.target as HTMLElement).scrollLeft,
+                y: (scrollEvent.target as HTMLElement).scrollTop
+            });
         });
 
         this.onDestroy$.subscribe(() => scrollSubscription.unsubscribe());
 
-        this.items$
-            .pipe(map((items): VirtualScroll.RenderedItem[] => items.map((item) => ({
+        this.items$.pipe(
+            map((items): VirtualScroll.RenderedItem[] => items.map((item) => ({
                 item,
                 visible: false
-            }))))
-            .subscribe(this.renderedItems$);
+            })))
+        ).subscribe(this.renderedItems$);
 
         // Make the first element visible (TODO- always?)
-        this.renderedItems$
-            .pipe(filter(renderedItems => renderedItems.length > 0))
-            .pipe(take(1))
-            .subscribe(renderedItems => renderedItems[0].visible = true);
+        this.renderedItems$.pipe(
+            filter(renderedItems => renderedItems.length > 0),
+            take(1)
+        ).subscribe(renderedItems => renderedItems[0].visible = true);
 
-        combineLatest(
-            this.scrollPosition$.pipe(throttleTime(50)) /* TODO - Make customizable */,
-            this.renderedItems$
-        ).pipe(filter(([, renderedItems]) => renderedItems.length > 0))
-        .pipe(withLatestFrom(this.bufferLength$, this.scrollContainer$))
-        .pipe(delay(0)) // Wait for DOM rendering to occur
-        .pipe(mergeMap(([[scrollPosition, renderedItems], bufferLength, scrollContainer]) => {
-            const [bestRenderedIndex, renderedElement] = this.findBestOnScreenItem(renderedItems);
+        combineLatest([
+            this.scrollPosition$.pipe(throttleTime(50, undefined, { leading: true, trailing: true })) /* TODO - Make customizable */,
+            this.renderedItems$,
+            this.scrollContainer$,
+            this.bufferLength$
+        ]).pipe(
+            filter(([, renderedItems]) => renderedItems.length > 0),
+            delay(0), // Wait for DOM rendering to occur
+            mergeMap(([scrollPosition, renderedItems, scrollContainer, bufferLength]) => {
+                const [bestRenderedIndex, renderedElement] = this.findBestOnScreenItem(renderedItems);
 
-            if (renderedElement) {
-                const offset = { x: renderedElement.offsetLeft, y: renderedElement.offsetTop };
-                const elementDimensions = {
-                    left: offset.x,
-                    top: offset.y,
-                    right: offset.x + renderedElement.clientWidth,
-                    bottom: offset.y + renderedElement.clientHeight
-                };
-                const renderedBounds: VirtualScroll.Rect = {
-                    left: scrollPosition.x,
-                    top: scrollPosition.y,
-                    right: scrollPosition.x + scrollContainer.clientWidth,
-                    bottom: scrollPosition.y + scrollContainer.clientHeight
-                };
-                const bufferLengthPx = window.innerHeight * bufferLength;
+                if (renderedElement) {
+                    const offset = { x: renderedElement.offsetLeft, y: renderedElement.offsetTop };
+                    const elementDimensions = {
+                        left: offset.x,
+                        top: offset.y,
+                        right: offset.x + renderedElement.clientWidth,
+                        bottom: offset.y + renderedElement.clientHeight
+                    };
+                    const renderedBounds: VirtualScroll.Rect = {
+                        left: scrollPosition.x,
+                        top: scrollPosition.y,
+                        right: scrollPosition.x + scrollContainer.clientWidth,
+                        bottom: scrollPosition.y + scrollContainer.clientHeight
+                    };
+                    const bufferLengthPx = (scrollContainer.clientHeight || window.innerHeight) * bufferLength;
 
-                renderedBounds.top -= bufferLengthPx;
-                renderedBounds.bottom += bufferLengthPx;
+                    renderedBounds.top -= bufferLengthPx;
+                    renderedBounds.bottom += bufferLengthPx;
 
-                return forkJoin(
-                    this.walkList(renderedItems, renderedBounds, bestRenderedIndex, 1, elementDimensions),
-                    this.walkList(renderedItems, renderedBounds, bestRenderedIndex, -1, elementDimensions)
-                );
-            } else {
-                return of(null);
-            }
-        }))
-        .subscribe();
+                    return forkJoin([
+                        this.walkList(renderedItems, renderedBounds, bestRenderedIndex, 1, elementDimensions),
+                        this.walkList(renderedItems, renderedBounds, bestRenderedIndex, -1, elementDimensions)
+                    ]);
+                } else {
+                    return of(null);
+                }
+            })
+        ).subscribe();
     }
 
     public checkScroll(scrollPosition?: VirtualScroll.ScrollPosition): void {
@@ -196,6 +226,7 @@ export class VirtualScroll extends AotAware {
             // Check if this element should still be rendered
             if (!this.intersects(renderedBounds, lastElementDimensions)) {
                 item.visible = false;
+                this.cdRef.markForCheck();
             }
         } else {
             const lastElementSize = {
@@ -209,11 +240,13 @@ export class VirtualScroll extends AotAware {
             // If the current item should be rendered, make it visible
             if (this.intersects(renderedBounds, lastElementDimensions)) {
                 item.visible = true;
+                this.cdRef.detectChanges();
 
                 // Wait for the DOM element to render, then continue walking the list
-                return of(null)
-                    .pipe(delay(0))
-                    .pipe(mergeMap(() => this.walkList(renderedItems, renderedBounds, index, direction)));
+                return of(null).pipe(
+                    delay(0),
+                    mergeMap(() => this.walkList(renderedItems, renderedBounds, index, direction))
+                );
             }
         }
 
