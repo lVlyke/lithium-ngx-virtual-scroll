@@ -2,7 +2,6 @@ import {
     Component,
     Input,
     ContentChild,
-    TemplateRef,
     ElementRef,
     ChangeDetectionStrategy,
     ChangeDetectorRef
@@ -10,6 +9,7 @@ import {
 import { LiComponent, StateEmitter, OnDestroy, AutoPush } from "@lithiumjs/angular";
 import { Subject, Observable, combineLatest, of, forkJoin, fromEvent, asyncScheduler } from "rxjs";
 import { map, throttleTime, filter, mergeMap, take, delay, tap } from "rxjs/operators";
+import { VirtualItem } from "../../directives/virtual-item.directive";
 
 export function DEFAULT_SCROLL_POSITION(): VirtualScroll.ScrollPosition {
     return { x: 0, y: 0 };
@@ -23,33 +23,35 @@ export function EMPTY_ARRAY<T>(): T[] {
     selector: "li-virtual-scroll",
     changeDetection: ChangeDetectionStrategy.OnPush,
     template: `
-        <ng-container *ngFor="let renderedItem of renderedItems; let i = index">
-            <ng-container *ngIf="renderedItem.visible; else placeholder">
-                <span class="li-virtual-item" [attr.data-li-virtual-index]="i">
-                    <ng-container *ngTemplateOutlet="templateRef; context: { $implicit: renderedItem.item, index: i }">
-                    </ng-container>
-                </span>
-            </ng-container>
+        <ng-container *ngIf="virtualItem">
+            <ng-container *ngFor="let renderedItem of renderedItems; let i = index">
+                <ng-container *ngIf="renderedItem.visible; else placeholder">
+                    <span class="li-virtual-item" [attr.data-li-virtual-index]="i">
+                        <ng-container *ngTemplateOutlet="virtualItem.templateRef; context: { $implicit: renderedItem.item, index: i }">
+                        </ng-container>
+                    </span>
+                </ng-container>
 
-            <ng-template #placeholder>
-                <div [ngStyle]="{ 'width': referenceWidth + 'px', 'height': referenceHeight + 'px'  }"></div>
-            </ng-template>
+                <ng-template #placeholder>
+                    <div [ngStyle]="{ 'width': referenceWidth + 'px', 'height': referenceHeight + 'px'  }"></div>
+                </ng-template>
+            </ng-container>
         </ng-container>
     `
 })
-export class VirtualScroll extends LiComponent {
+export class VirtualScroll<T> extends LiComponent {
 
     private static readonly DEFAULT_BUFFER_LENGTH = 3;
     private static readonly DEFAULT_SCROLL_THROTTLE_MS = 50;
 
-    @ContentChild(TemplateRef)
-    public readonly templateRef: TemplateRef<any>;
+    @ContentChild(VirtualItem)
+    public readonly virtualItem: VirtualItem;
 
     @Input()
-    public items: any[];
+    public items: T[];
 
     @StateEmitter({ propertyName: "items", initial: EMPTY_ARRAY })
-    public readonly items$: Subject<any[]>;
+    public readonly items$: Subject<T[]>;
 
     @Input()
     public bufferLength: number;
@@ -73,7 +75,7 @@ export class VirtualScroll extends LiComponent {
     private readonly scrollPosition$: Subject<VirtualScroll.ScrollPosition>;
 
     @StateEmitter({ initial: EMPTY_ARRAY })
-    private readonly renderedItems$: Subject<VirtualScroll.RenderedItem[]>;
+    private readonly renderedItems$: Subject<VirtualScroll.RenderedItem<T>[]>;
 
     @StateEmitter({ initialValue: 0 })
     private readonly referenceWidth$: Subject<number>;
@@ -114,7 +116,7 @@ export class VirtualScroll extends LiComponent {
         this.onDestroy$.subscribe(() => scrollSubscription.unsubscribe());
 
         this.items$.pipe(
-            map((items): VirtualScroll.RenderedItem[] => items.map((item) => ({
+            map((items): VirtualScroll.RenderedItem<T>[] => items.map((item) => ({
                 item,
                 visible: false
             })))
@@ -145,7 +147,11 @@ export class VirtualScroll extends LiComponent {
                     right: scrollPosition.x + scrollContainer.clientWidth,
                     bottom: scrollPosition.y + scrollContainer.clientHeight
                 };
+                const bufferLengthPx = (scrollContainer.clientHeight) * bufferLength;
                 const [bestRenderedIndex, renderedElement] = this.findBestOnScreenItem(renderedItems);
+
+                renderedBounds.top -= bufferLengthPx;
+                renderedBounds.bottom += bufferLengthPx;
 
                 if (renderedElement) {
                     // TODO
@@ -159,11 +165,6 @@ export class VirtualScroll extends LiComponent {
                         right: offset.x + renderedElement.clientWidth,
                         bottom: offset.y + renderedElement.clientHeight
                     };
-                    
-                    const bufferLengthPx = (scrollContainer.clientHeight || window.innerHeight) * bufferLength;
-
-                    renderedBounds.top -= bufferLengthPx;
-                    renderedBounds.bottom += bufferLengthPx;
 
                     return forkJoin([
                         this.walkList(renderedItems, renderedBounds, bestRenderedIndex, 1, true, elementDimensions),
@@ -204,7 +205,7 @@ export class VirtualScroll extends LiComponent {
         this.listElement.style.display = apply ? "block" : "initial";
     }
 
-    private findBestOnScreenItem(renderedItems: VirtualScroll.RenderedItem[]): [number, HTMLElement] {
+    private findBestOnScreenItem(renderedItems: VirtualScroll.RenderedItem<T>[]): [number, HTMLElement] {
         const minRenderedIndex = renderedItems.findIndex(renderedItem => renderedItem.visible);
         const maxRenderedIndex = minRenderedIndex + renderedItems.slice(minRenderedIndex).findIndex(renderedItem => !renderedItem.visible);
 
@@ -239,13 +240,13 @@ export class VirtualScroll extends LiComponent {
     }
 
     private walkList(
-        renderedItems: VirtualScroll.RenderedItem[],
+        renderedItems: VirtualScroll.RenderedItem<T>[],
         renderedBounds: VirtualScroll.Rect,
         index: number,
         direction: 1 | -1,
         stopOnUnrendered: boolean,
         lastElementDimensions?: VirtualScroll.Rect
-    ): Observable<VirtualScroll.RenderedItem[]> {
+    ): Observable<VirtualScroll.RenderedItem<T>[]> {
         const item = renderedItems[index];
         const nextIndex = index + direction;
 
@@ -329,8 +330,8 @@ export namespace VirtualScroll {
         bottom: number;
     }
 
-    export interface RenderedItem {
-        item: any;
+    export interface RenderedItem<T> {
+        item: T;
         visible: boolean;
         lastElementSize?: ScrollPosition;
     }

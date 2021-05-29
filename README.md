@@ -1,6 +1,6 @@
 # @lithiumjs/ngx-virtual-scroll
 
-A fast virtual scrolling solution for Angular that natively supports items with unequal heights. Built with [@lithiumjs/angular](https://github.com/lVlyke/lithium-angular).
+A lightweight virtual scrolling solution for Angular that supports single column lists and grid lists. Built with [@lithiumjs/angular](https://github.com/lVlyke/lithium-angular).
 
 ## How to use
 
@@ -8,24 +8,22 @@ A fast virtual scrolling solution for Angular that natively supports items with 
 npm install @lithiumjs/angular @lithiumjs/ngx-virtual-scroll
 ```
 
-Import `NgxVirtualScrollModule` in your project. Add the following to your template:
+Import the `NgxVirtualScrollModule`. Add the following to your component template:
 
 ```html
     <!-- bufferLength is optional -->
-    <li-virtual-scroll [items]="items" [bufferLength]="5">
-        <ng-template let-item>
-            <!-- Your custom content goes here -->
-            <div>{{item}}</div>
-        </ng-template>
+    <li-virtual-scroll [items]="items" [bufferLength]="3">
+        <!-- liVirtualItem defines a list item element for each item -->
+        <div *liVirtualItem="let item">
+            {{ item.name }}
+        </div>
     </li-virtual-scroll>
 ```
 
-```li-virtual-scroll``` automatically handles rendering items of different heights without any further config needed.
-
 ## Properties
 
-* **```items```** - The list of items to display.
-* **```bufferLength```** - (Optional) How much extra content should be rendered, measured in multiples of window height. This helps improve scrolling performance. Defaults to ```3```.
+* **```items```** - The list of items to render.
+* **```bufferLength```** - (Optional) How much extra list content should be rendered, measured in multiples of the list container's client height. This helps improve scrolling responsiveness for fast scrolling. Defaults to ```3```.
 * **```scrollContainer```** - (Optional) The HTML entity to use as the scroll container. Defaults to the host element.
 * **```eventCapture```** - (Optional) Whether or not to use event capture mode for capturing scroll events from ```scrollContainer```. Defaults to ```false```.
 
