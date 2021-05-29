@@ -2,7 +2,7 @@
   "name": "@lithiumjs/ngx-virtual-scroll",
   "description": "A fast virtual scrolling solution for Angular that natively supports items with unequal heights. Built with @lithiumjs/angular.",
   "repository": "https://github.com/lVlyke/lithium-ngx-virtual-scroll",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "main": "index.js",
   "author": "Mychal Thompson <mychalrthompson@gmail.com>",
   "license": "MIT",

@@ -255,8 +255,10 @@ export class VirtualScroll<T> extends LiComponent {
             return of(renderedItems);
         }
 
-        if (item?.visible) {
-            const renderedElement = this.getRenderedElement(index);
+        let renderedElement: HTMLElement;
+        const visible = item?.visible && (renderedElement = this.getRenderedElement(index));
+        if (visible) {
+            
             const offset = { x: renderedElement.offsetLeft, y: renderedElement.offsetTop };
             
             // Update the element dimensions based on the current element
