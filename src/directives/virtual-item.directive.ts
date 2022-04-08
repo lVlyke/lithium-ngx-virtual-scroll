@@ -1,14 +1,11 @@
 import { Directive, TemplateRef } from "@angular/core";
-import { LiComponent } from "@lithiumjs/angular";
 
 @Directive({
     selector: "[liVirtualItem]"
 })
-export class VirtualItem extends LiComponent {
+export class VirtualItem {
 
     constructor(
         public readonly templateRef: TemplateRef<HTMLElement>
-    ) {
-        super();
-    }
+    ) {}
 }

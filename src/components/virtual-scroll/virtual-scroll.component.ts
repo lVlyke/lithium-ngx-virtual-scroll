@@ -6,22 +6,15 @@ import {
     ChangeDetectionStrategy,
     ChangeDetectorRef
 } from "@angular/core";
-import { LiComponent, StateEmitter, OnDestroy, AutoPush } from "@lithiumjs/angular";
-import { Subject, Observable, combineLatest, of, forkJoin, fromEvent, asyncScheduler } from "rxjs";
+import { OnDestroy, AutoPush, DeclareState, ComponentState, ComponentStateRef } from "@lithiumjs/angular";
+import { Observable, combineLatest, of, forkJoin, fromEvent, asyncScheduler } from "rxjs";
 import { map, throttleTime, filter, mergeMap, take, delay, tap } from "rxjs/operators";
 import { VirtualItem } from "../../directives/virtual-item.directive";
-
-export function DEFAULT_SCROLL_POSITION(): VirtualScroll.ScrollPosition {
-    return { x: 0, y: 0 };
-}
-
-export function EMPTY_ARRAY<T>(): T[] {
-    return [];
-}
 
 @Component({
     selector: "li-virtual-scroll",
     changeDetection: ChangeDetectionStrategy.OnPush,
+    providers: [ComponentState.create(VirtualScroll)],
     template: `
         <ng-container *ngIf="virtualItem">
             <ng-container *ngFor="let renderedItem of renderedItems; let i = index">
@@ -39,104 +32,88 @@ export function EMPTY_ARRAY<T>(): T[] {
         </ng-container>
     `
 })
-export class VirtualScroll<T> extends LiComponent {
+export class VirtualScroll<T> {
 
     private static readonly DEFAULT_BUFFER_LENGTH = 3;
-    private static readonly DEFAULT_SCROLL_THROTTLE_MS = 50;
+    private static readonly DEFAULT_SCROLL_THROTTLE_MS = 100;
+
+    @Input()
+    public items: T[] = [];
+
+    @Input()
+    public bufferLength = VirtualScroll.DEFAULT_BUFFER_LENGTH;
+
+    @Input()
+    @DeclareState()
+    public scrollContainer?: HTMLElement;
+
+    @Input()
+    public eventCapture = false;
 
     @ContentChild(VirtualItem)
-    public readonly virtualItem: VirtualItem;
-
-    @Input()
-    public items: T[];
-
-    @StateEmitter({ propertyName: "items", initial: EMPTY_ARRAY })
-    public readonly items$: Subject<T[]>;
-
-    @Input()
-    public bufferLength: number;
-
-    @StateEmitter({ propertyName: "bufferLength", initialValue: VirtualScroll.DEFAULT_BUFFER_LENGTH })
-    public readonly bufferLength$: Subject<number>;
-
-    @Input()
-    public scrollContainer: HTMLElement;
-
-    @StateEmitter({ propertyName: "scrollContainer" })
-    public readonly scrollContainer$: Subject<HTMLElement>;
-
-    @Input()
-    public eventCapture: boolean;
-
-    @StateEmitter({ propertyName: "eventCapture", initialValue: false })
-    public readonly eventCapture$: Subject<boolean>;
-
-    @StateEmitter({ initial: DEFAULT_SCROLL_POSITION })
-    private readonly scrollPosition$: Subject<VirtualScroll.ScrollPosition>;
-
-    @StateEmitter({ initial: EMPTY_ARRAY })
-    private readonly renderedItems$: Subject<VirtualScroll.RenderedItem<T>[]>;
-
-    @StateEmitter({ initialValue: 0 })
-    private readonly referenceWidth$: Subject<number>;
-
-    @StateEmitter({ initialValue: 0 })
-    private readonly referenceHeight$: Subject<number>;
+    public virtualItem!: VirtualItem;
 
     @OnDestroy()
-    private readonly onDestroy$: Observable<void>;
+    private readonly onDestroy$!: Observable<void>;
 
-    private readonly listElement: HTMLElement;
+    @DeclareState("renderedItems")
+    private _renderedItems: VirtualScroll.RenderedItem<T>[] = [];
+
+    @DeclareState("scrollPosition")
+    private _scrollPosition: VirtualScroll.ScrollPosition = { x: 0, y: 0 };
+
+    @DeclareState("referenceWidth")
+    private _referenceWidth = 0;
+
+    @DeclareState("referenceWidth")
+    private _referenceHeight = 0;
+
+    private _listElement!: HTMLElement;
 
     constructor(
         private readonly cdRef: ChangeDetectorRef,
+        stateRef: ComponentStateRef<VirtualScroll<T>>,
         { nativeElement: listElement }: ElementRef<HTMLElement>
     ) {
-        super();
-
         AutoPush.enable(this, cdRef);
 
-        this.listElement = listElement;
+        this.scrollContainer = this._listElement = listElement;
 
-        this.scrollContainer$.next(listElement);
-
-        const scrollSubscription = combineLatest([
-            this.scrollContainer$,
-            this.eventCapture$
-        ]).pipe(
+        const scrollSubscription = combineLatest(stateRef.getAll(
+            "scrollContainer",
+            "eventCapture"
+        )).pipe(
             tap(([scrollContainer]) => this.applyScrollContainerStyles(scrollContainer === listElement)),
-            mergeMap(([scrollContainer, capture]) => fromEvent<MouseEvent>(scrollContainer, "scroll", { capture }))
+            mergeMap(([scrollContainer, capture]) => fromEvent<MouseEvent>(scrollContainer!, "scroll", { capture }))
         ).subscribe((scrollEvent) => {
-            this.scrollPosition$.next({
+            this._scrollPosition = {
                 x: (scrollEvent.target as HTMLElement).scrollLeft,
                 y: (scrollEvent.target as HTMLElement).scrollTop
-            });
+            };
         });
 
         this.onDestroy$.subscribe(() => scrollSubscription.unsubscribe());
 
-        this.items$.pipe(
+        stateRef.get("items").pipe(
             map((items): VirtualScroll.RenderedItem<T>[] => items.map((item) => ({
                 item,
                 visible: false
             })))
-        ).subscribe(this.renderedItems$);
+        ).subscribe(renderedItems => this._renderedItems = renderedItems);
 
         // Make the first element visible (TODO- always?)
-        this.renderedItems$.pipe(
+        stateRef.get("renderedItems").pipe(
             filter(renderedItems => renderedItems.length > 0),
             take(1)
         ).subscribe(renderedItems => renderedItems[0].visible = true);
 
         combineLatest([
-            this.scrollPosition$.pipe(throttleTime(
+            stateRef.get("scrollPosition").pipe(throttleTime(
                 VirtualScroll.DEFAULT_SCROLL_THROTTLE_MS, // TODO - Make customizable
                 asyncScheduler,
                 { leading: true, trailing: true }
             )),
-            this.renderedItems$,
-            this.scrollContainer$,
-            this.bufferLength$
+            ...stateRef.getAll("renderedItems", "scrollContainer", "bufferLength")
         ]).pipe(
             filter(([, renderedItems]) => renderedItems.length > 0),
             delay(0), // Wait for DOM rendering to occur
@@ -144,10 +121,10 @@ export class VirtualScroll<T> extends LiComponent {
                 const renderedBounds: VirtualScroll.Rect = {
                     left: scrollPosition.x,
                     top: scrollPosition.y,
-                    right: scrollPosition.x + scrollContainer.clientWidth,
-                    bottom: scrollPosition.y + scrollContainer.clientHeight
+                    right: scrollPosition.x + scrollContainer!.clientWidth,
+                    bottom: scrollPosition.y + scrollContainer!.clientHeight
                 };
-                const bufferLengthPx = (scrollContainer.clientHeight) * bufferLength;
+                const bufferLengthPx = (scrollContainer!.clientHeight) * bufferLength;
                 const [bestRenderedIndex, renderedElement] = this.findBestOnScreenItem(renderedItems);
 
                 renderedBounds.top -= bufferLengthPx;
@@ -155,8 +132,8 @@ export class VirtualScroll<T> extends LiComponent {
 
                 if (renderedElement) {
                     // TODO
-                    this.referenceWidth$.next(renderedElement.clientWidth);
-                    this.referenceHeight$.next(renderedElement.clientHeight);
+                    this._referenceWidth = renderedElement.clientWidth;
+                    this._referenceHeight = renderedElement.clientHeight;
 
                     const offset = { x: renderedElement.offsetLeft, y: renderedElement.offsetTop };
                     const elementDimensions = {
@@ -173,20 +150,20 @@ export class VirtualScroll<T> extends LiComponent {
                         delay(VirtualScroll.DEFAULT_SCROLL_THROTTLE_MS * 2),
                         tap(() => {
                             // Re-check the rendering status if there are no rendered items or if the scroll position changed quickly
-                            if (this.listElement.scrollLeft !== scrollPosition.x
-                             || this.listElement.scrollTop !== scrollPosition.y
+                            if (this._listElement.scrollLeft !== scrollPosition.x
+                             || this._listElement.scrollTop !== scrollPosition.y
                              || this.getAllRenderedElements().length === 0) {
-                                this.scrollPosition$.next({ x: this.listElement.scrollLeft, y: this.listElement.scrollTop });
+                                this._scrollPosition = { x: this._listElement.scrollLeft, y: this._listElement.scrollTop };
                             }
                         })
                     );
-                } else if (renderedItems.length > 0) {
+                } else if (renderedItems.length > 0 && this._referenceWidth > 0 && this._referenceHeight > 0) {
                     // If there are no rendered items, walk the list from the beginning to find the rendered segment
                     return this.walkList(renderedItems, renderedBounds, 0, 1, false, {
                         left: 0,
                         top: 0,
-                        right: this.referenceWidth,
-                        bottom: this.referenceHeight
+                        right: this._referenceWidth,
+                        bottom: this._referenceHeight
                     });
                 } else {
                     return of(null);
@@ -195,14 +172,29 @@ export class VirtualScroll<T> extends LiComponent {
         ).subscribe();
     }
 
+    public get renderedItems(): VirtualScroll.RenderedItem<T>[] {
+        return this._renderedItems;
+    }
+
+    public get scrollPosition(): VirtualScroll.ScrollPosition {
+        return this._scrollPosition;
+    }
+
+    public get referenceWidth(): number {
+        return this._referenceWidth;
+    }
+
+    public get referenceHeight(): number {
+        return this._referenceHeight;
+    }
+
     public checkScroll(scrollPosition?: VirtualScroll.ScrollPosition): void {
-       (scrollPosition ? of(scrollPosition) : this.scrollPosition$.pipe(take(1)))
-            .subscribe(scrollPosition => this.scrollPosition$.next(scrollPosition));
+       this._scrollPosition = scrollPosition ?? this._scrollPosition;
     }
 
     private applyScrollContainerStyles(apply: boolean) {
-        this.listElement.style.overflowY = apply ? "scroll" : "initial";
-        this.listElement.style.display = apply ? "block" : "initial";
+        this._listElement.style.overflowY = apply ? "scroll" : "initial";
+        this._listElement.style.display = apply ? "block" : "initial";
     }
 
     private findBestOnScreenItem(renderedItems: VirtualScroll.RenderedItem<T>[]): [number, HTMLElement] {
@@ -211,7 +203,7 @@ export class VirtualScroll<T> extends LiComponent {
 
         // Grab any rendered element (that is currently being rendered in the DOM)
         let bestRenderedIndex = minRenderedIndex;
-        let renderedElement: HTMLElement;
+        let renderedElement: HTMLElement | null;
         do {
             renderedElement = this.getRenderedElement(bestRenderedIndex);
         } while (!renderedElement && ++bestRenderedIndex < (maxRenderedIndex === -1 ? renderedItems.length : maxRenderedIndex));
@@ -224,15 +216,15 @@ export class VirtualScroll<T> extends LiComponent {
             }
         }
 
-        return [bestRenderedIndex, renderedElement];
+        return [bestRenderedIndex, renderedElement!];
     }
 
-    private getRenderedElement(renderedIndex: number): HTMLElement {
-        return this.listElement.querySelector(`[data-li-virtual-index="${renderedIndex}"]`);
+    private getRenderedElement(renderedIndex: number): HTMLElement | null {
+        return this._listElement.querySelector(`[data-li-virtual-index="${renderedIndex}"]`);
     }
 
     private getAllRenderedElements(): NodeListOf<HTMLElement> {
-        return this.listElement.querySelectorAll(".li-virtual-item");
+        return this._listElement.querySelectorAll(".li-virtual-item");
     }
 
     private intersects(a: VirtualScroll.Rect, b: VirtualScroll.Rect): boolean {
@@ -251,14 +243,12 @@ export class VirtualScroll<T> extends LiComponent {
         const nextIndex = index + direction;
 
         // Stop walking the list if we hit an unrendered segment
-        if (stopOnUnrendered && !lastElementDimensions && !item?.visible) {
+        if (nextIndex >= renderedItems.length || (stopOnUnrendered && !lastElementDimensions && !item?.visible)) {
             return of(renderedItems);
         }
 
-        let renderedElement: HTMLElement;
-        const visible = item?.visible && (renderedElement = this.getRenderedElement(index));
-        if (visible) {
-            
+        let renderedElement: HTMLElement | null;
+        if (item?.visible && (renderedElement = this.getRenderedElement(index))) {
             const offset = { x: renderedElement.offsetLeft, y: renderedElement.offsetTop };
             
             // Update the element dimensions based on the current element
@@ -274,7 +264,7 @@ export class VirtualScroll<T> extends LiComponent {
                 item.visible = false;
                 this.cdRef.markForCheck();
             }
-        } else {
+        } else if (lastElementDimensions) {
             const lastElementSize = {
                 x: lastElementDimensions.right - lastElementDimensions.left,
                 y: lastElementDimensions.bottom - lastElementDimensions.top,
@@ -283,11 +273,11 @@ export class VirtualScroll<T> extends LiComponent {
             const offsetY = lastElementSize.y * direction;
 
             // Walk to the next item in the list
-            if (lastElementDimensions.right + offsetX <= this.listElement.scrollWidth && lastElementDimensions.left + offsetX >= 0) {
+            if (lastElementDimensions.right + offsetX <= this._listElement.scrollWidth && lastElementDimensions.left + offsetX >= 0) {
                 lastElementDimensions.left += offsetX;
                 lastElementDimensions.right += offsetX;
             } else {
-                lastElementDimensions.left = direction > 0 ? 0 : this.listElement.scrollWidth;
+                lastElementDimensions.left = direction > 0 ? 0 : this._listElement.scrollWidth;
                 lastElementDimensions.right = lastElementDimensions.left + offsetX;
 
                 lastElementDimensions.top += offsetY;
@@ -296,14 +286,13 @@ export class VirtualScroll<T> extends LiComponent {
 
             // If the current item should be rendered, make it visible
             if (this.intersects(renderedBounds, lastElementDimensions)) {
-                item.visible = true;
-                this.cdRef.detectChanges();
+                if (!!item) {
+                    item.visible = true;
+                    this.cdRef.markForCheck();
+                }
 
-                // Wait for the DOM element to render, then continue walking the list
-                return of(null).pipe(
-                    delay(0),
-                    mergeMap(() => this.walkList(renderedItems, renderedBounds, index, direction, stopOnUnrendered, lastElementDimensions))
-                );
+                // Continue walking the list
+                return this.walkList(renderedItems, renderedBounds, nextIndex, direction, stopOnUnrendered, lastElementDimensions);
             }
         }
 
