@@ -1,5 +1,6 @@
 {
   "spec_dir": "spec/build/spec",
+  "jsLoader": "import",
   "spec_files": [
     "**/*[sS]pec.js"
   ],

@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 //@ts-check
-"use strict";
 
-const fs = require("fs-extra");
-const child_process = require("child_process");
-const path = require("path");
+import fs from "fs-extra";
+import child_process from "child_process";
+import path from "path";
 
 const INJECTED_FILES = {
     "README.md": "./README.md",

@@ -1,9 +1,8 @@
 #!/usr/bin/env node
+//@ts-check
 
-"use strict";
-
-const fs = require("fs-extra");
-const child_process = require("child_process");
+import fs from "fs-extra";
+import child_process from "child_process";
 
 const BUILD_DIR = "./spec/build";
 

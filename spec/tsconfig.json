@@ -1,5 +1,6 @@
 {
     "compilerOptions": {
+        "strict": true,
         "noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noImplicitAny": true,
@@ -9,7 +10,7 @@
         "stripInternal": true,
         "emitDecoratorMetadata": false,
         "experimentalDecorators": true,
-        "module": "commonjs",
+        "module": "esnext",
         "moduleResolution": "node",
         "target": "es2015",
         "outDir": "./build",
@@ -29,9 +30,6 @@
     "typeRoots": [
         "../node_modules/@types"
     ],
-    "atom": {
-        "rewriteTsConfig": false
-    },
     "angularCompilerOptions": {
         "genDir": "build",
         "skipTemplateCodegen": true
