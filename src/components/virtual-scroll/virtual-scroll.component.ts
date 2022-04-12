@@ -8,8 +8,7 @@ import {
     ViewChild,
     Renderer2,
     EmbeddedViewRef,
-    ViewContainerRef,
-    ViewRef
+    ViewContainerRef
 } from "@angular/core";
 import { OnDestroy, AfterViewInit, AutoPush, DeclareState, ComponentState, ComponentStateRef } from "@lithiumjs/angular";
 import { Observable, combineLatest, fromEvent, asyncScheduler } from "rxjs";
@@ -94,8 +93,8 @@ export class VirtualScroll<T> {
 
     private _viewCache: Record<number, EmbeddedViewRef<VirtualItem.ViewContext<T>>> = {};
     private _renderedViews: Record<number, EmbeddedViewRef<VirtualItem.ViewContext<T>>> = {};
-
     private _listElement!: HTMLElement;
+    private _stats = { moves: 0, hits: 0, misses: 0 };
 
     constructor(
         cdRef: ChangeDetectorRef,
@@ -105,10 +104,9 @@ export class VirtualScroll<T> {
     ) {
         AutoPush.enable(this, cdRef);
 
-        let ignoreChanges = false;
-
         this.scrollContainer = this._listElement = listElement;
 
+        // Update the current scroll position on scroll changes
         const scrollSubscription = combineLatest(stateRef.getAll(
             "scrollContainer",
             "eventCapture"
@@ -122,12 +120,19 @@ export class VirtualScroll<T> {
             distinctUntilChanged((prev, cur) => prev.x === cur.x && prev.y === cur.y)
         ).subscribe(scrollPosition => this._scrollPosition = scrollPosition);
 
-        stateRef.get("items").subscribe(() => this.clearViewCache());
+        // Clear all views if the list of items changes
+        stateRef.get("items").subscribe(() => {
+            this.clearRenderedViews();
+            this.clearViewCache();
+        });
 
+        // Clear the view cache if disabled
         stateRef.get("viewCache").pipe(
-            filter(viewCache => !viewCache)
+            distinctUntilChanged(),
+            filter(viewCache => !viewCache),
         ).subscribe(() => this.clearViewCache());
 
+        // Clear all views and stop listening for scrolls on destroy
         this.onDestroy$.subscribe(() => {
             this.clearViewCache();
             this.clearRenderedViews();
@@ -146,6 +151,7 @@ export class VirtualScroll<T> {
             switchMap(() => this.refItemChange)
         ).subscribe(refItem => this.itemHeight = this.calculateItemHeight(refItem));
 
+        // Recalculate rendered items on changes
         this.afterViewInit$.pipe(
             switchMapTo(combineLatest([
                 stateRef.get("scrollPosition").pipe(throttleTime(
@@ -155,7 +161,7 @@ export class VirtualScroll<T> {
                 )),
                 ...stateRef.getAll("items", "scrollContainer", "bufferLength", "itemWidth", "itemHeight", "gridList")
             ])),
-            filter(([, items]) => !ignoreChanges && items.length > 0)
+            filter(([, items]) => items.length > 0)
         ).subscribe(([
             scrollPosition,
             items,
@@ -166,42 +172,47 @@ export class VirtualScroll<T> {
             gridList
         ]) => {
             if (!itemWidth || !itemHeight) {
-                return; // TODO
+                throw new Error("[VirtualScroll] Unable to calculate item width/height.")
             }
 
-            const viewportStartX = scrollPosition.x;
-            const viewportStartY = scrollPosition.y;
-            const viewportEndX = viewportStartX + scrollContainer!.clientWidth;
-            const viewportEndY = viewportStartY + scrollContainer!.clientHeight;
+            // The bounds of the scroll container, in pixels
             const renderedBounds: VirtualScroll.Rect = {
-                left: viewportStartX,
-                top: viewportStartY,
-                right: viewportEndX,
-                bottom: viewportEndY
+                left: scrollPosition.x,
+                top: scrollPosition.y,
+                right: scrollPosition.x + scrollContainer!.clientWidth,
+                bottom: scrollPosition.y + scrollContainer!.clientHeight
             };
             const bufferLengthPx = (scrollContainer!.clientHeight) * bufferLength;
 
+            // Adjust the bounds by the buffer length
             renderedBounds.top -= bufferLengthPx;
             renderedBounds.bottom += bufferLengthPx;
 
+            // Calculate the number of rendered items per row
             const itemsPerRow = gridList ? Math.floor(scrollContainer!.clientWidth / itemWidth) : 1;
 
             cdRef.detach();
 
+            // Calculate which items should be rendered on screen
             this._minIndex = Math.min(items.length - 1, Math.floor(Math.max(0, renderedBounds.top) / itemHeight) * itemsPerRow);
             this._maxIndex = Math.min(items.length - 1, Math.ceil(Math.max(0, renderedBounds.bottom) / itemHeight) * itemsPerRow);
             this._renderedItems = items.slice(this._minIndex, this._maxIndex);
 
             cdRef.reattach();
-            cdRef.detectChanges();
+            cdRef.markForCheck();
 
+            // Calculate the virtual scroll space before/after the rendered items
             const spaceBeforePx = this._minIndex * itemHeight / itemsPerRow;
             const spaceAfterPx = (items.length - 1 - this._maxIndex) * itemHeight / itemsPerRow;
 
+            console.log(scrollPosition, itemsPerRow, this._minIndex, this._maxIndex, spaceBeforePx, spaceAfterPx);
+
+            // Update the virtual spacers in the DOM
             renderer.setStyle(this._virtualSpacerBefore.nativeElement, "height", `${spaceBeforePx}px`);
             renderer.setStyle(this._virtualSpacerAfter.nativeElement, "height", `${spaceAfterPx}px`);
         });
 
+        // Recalculate views on rendered items changes
         stateRef.get("renderedItems").pipe(
             withLatestFrom(stateRef.get("minIndex")),
             pairwise()
@@ -210,104 +221,48 @@ export class VirtualScroll<T> {
             [renderedItems, minIndex]
         ]) => {
             if (!this.virtualItem) {
-                throw new Error("liVirtualItem not defined.");
+                throw new Error("liVirtualItem directive is not defined.");
             }
 
-            const movedViews = new Map<T, ViewRef>();
-
-            ignoreChanges = true;
-
+            // Unrender all items that are no longer rendered
             prevRenderedItems.forEach((renderedItem, index) => {
                 const globalIndex =  prevMinIndex + index;
-                const viewRef = this._renderedViews[globalIndex];
+                const viewRef = this._renderedViews[globalIndex] as EmbeddedViewRef<VirtualItem.ViewContext<T>>;
 
                 if (viewRef) {
-                    if (renderedItems.includes(renderedItem)) {
-                        // Mark the view to be moved
-                        movedViews.set(renderedItem, viewRef);
-                    } else {
-                        const viewIndex = this._viewContainerRef.indexOf(viewRef);
-
-                        if (viewIndex !== -1) {
-                            if (this.viewCache) {
-                                // Add the view to the cache
-                                this._viewCache[globalIndex] = viewRef as EmbeddedViewRef<VirtualItem.ViewContext<T>>;
-
-                                // Detach the view from the container
-                                this._viewContainerRef.detach(viewIndex);
-                            } else {
-                                // Destroy the view
-                                delete this._viewCache[globalIndex];
-                                this._viewContainerRef.remove(viewIndex);
-                            }
-                        } else {
-                            // Destroy the view
-                            delete this._viewCache[globalIndex];
-                            viewRef.destroy();
-                        }
+                    // Unrender this view if it's no longer being rendered
+                    if (!renderedItems.includes(renderedItem)) {
+                        // Offload the view to be destroyed or cached
+                        this.unrenderViewRefAt(viewRef, globalIndex);
                     }
-
-                    delete this._renderedViews[globalIndex];
+                } else {
+                    console.warn(`[VirtualScroll] Item ${globalIndex} view is missing.`);
                 }
             });
 
-            if (this.viewCache && this.cacheFull) {
-                const cachedIndices = Object.keys(this._viewCache).map(Number);
-                const direction = minIndex >= this.items.length / 2 ? 1 : -1;
-                const startIndex = direction === 1 ? 0 : cachedIndices.length - 1;
-                const endIndex = direction === 1 ? cachedIndices.length - 1 : 0;
-                for (let i = startIndex; i != endIndex && this.cacheFull; i += direction) {
-                    const viewIndex = cachedIndices[i];
-                    // If this view isn't about to be rendered, evict it from the cache and destroy it
-                    if (viewIndex < minIndex || viewIndex >= minIndex + renderedItems.length) {
-                        const viewRef = this._viewCache[viewIndex];
-                        delete this._viewCache[viewIndex];
-                        const viewRefIndex = this._viewContainerRef.indexOf(viewRef);
+            // Purge the view cache to ensure it's within size limitations
+            this.purgeViewCache();
 
-                        if (viewRefIndex !== -1) {
-                            this._viewContainerRef.remove(viewIndex);
-                        } else {
-                            viewRef.destroy();
-                        }
-                    }
-                }
+            this._stats = { hits: 0, misses: 0, moves: 0 };
+
+            // Render the new list of items
+            const renderedViewIndices = Object.keys(this._renderedViews).map(Number);
+            renderedItems.forEach((renderedItem, index) => {
+                this.renderViewForItemAt(renderedItem, minIndex + index, renderedViewIndices);
+            });
+
+            if (this._viewContainerRef.length !== renderedItems.length) {
+                console.warn(`[VirtualScroll] Expected ${renderedItems.length} items, got ${this._viewContainerRef.length}.`);
             }
 
-            this.clearRenderedViews();
-
-            renderedItems.forEach((renderedItem, index) => {
-                const globalIndex = minIndex + index;
-                let viewRef: ViewRef = this._viewCache[globalIndex];
-                let skipUpdate = false;
-                
-                if (movedViews.has(renderedItem)) {
-                    viewRef = movedViews.get(renderedItem)!;
-                    const newIndex = this._viewContainerRef.length - 1;
-
-                    if (this._viewContainerRef.indexOf(viewRef) !== newIndex) {
-                        this._viewContainerRef.move(viewRef, newIndex);
-                    } else {
-                        skipUpdate = true;
-                    }
-                } else if (viewRef) {
-                    this._viewContainerRef.insert(viewRef);
-                } else {
-                    viewRef = this._viewContainerRef.createEmbeddedView(
-                        this.virtualItem.templateRef,
-                        { $implicit: renderedItem, index: globalIndex }
-                    );
-                }
-
-                this._renderedViews[globalIndex] = viewRef as EmbeddedViewRef<VirtualItem.ViewContext<T>>;
-
-                if (!skipUpdate) {
-                    // Initialize the view state
-                    viewRef.detectChanges();
-                }
-            });
-
-            ignoreChanges = false;
-            movedViews.clear();
+            console.log(
+                "moves ", this._stats.moves,
+                "hits ", this._stats.hits,
+                "misses ", this._stats.misses,
+                "cache size ", Object.keys(this._viewCache).length,
+                "rendered items ", this._viewContainerRef.length, 
+                " (", Object.keys(this._renderedItems).length, " refs)"
+            );
         });
     }
 
@@ -361,16 +316,102 @@ export class VirtualScroll<T> {
         return itemEl.offsetHeight + parseInt(style.marginTop) + parseInt(style.marginBottom);
     }
 
+    private destroyViewRef(viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>): void {
+        const viewIndex = this._viewContainerRef.indexOf(viewRef);
+
+        // Destroy the view
+        if (viewIndex !== -1) {
+            this._viewContainerRef.remove(viewIndex);
+        } else {
+            viewRef.destroy();
+        }
+    }
+
+    private destroyViewRefAt(viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>, globalIndex: number): void {
+        delete this._viewCache[globalIndex];
+        delete this._renderedViews[globalIndex];
+        this.destroyViewRef(viewRef);
+    }
+
+    private cacheViewRefAt(viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>, globalIndex: number): void {
+        delete this._renderedViews[globalIndex];
+        this._viewCache[globalIndex] = viewRef;
+        const viewIndex = this._viewContainerRef.indexOf(viewRef);
+
+        if (viewIndex !== -1) {
+            // Detach the view from the container if active
+            this._viewContainerRef.detach(viewIndex);
+        }
+    }
+
+    private unrenderViewRefAt(viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>, globalIndex: number): void {
+        if (this.viewCache) {
+            // Add the view to the cache
+            this.cacheViewRefAt(viewRef, globalIndex);
+        } else {
+            // Destroy the view
+            this.destroyViewRefAt(viewRef, globalIndex);
+        }
+    }
+
+    private renderViewForItemAt(item: T, globalIndex: number, renderedViewIndices: number[]): void {
+        let viewRef = this._viewCache[globalIndex] as EmbeddedViewRef<VirtualItem.ViewContext<T>>;
+        let skipUpdate = false;
+        
+        // If this object is still rendered, just move it to the end of the container
+        if (renderedViewIndices.includes(globalIndex)) {
+            this._stats.moves++;
+            viewRef = this._renderedViews[globalIndex];
+            const newIndex = this._viewContainerRef.length - 1;
+
+            if (this._viewContainerRef.indexOf(viewRef) !== newIndex) {
+                this._viewContainerRef.move(viewRef, newIndex);
+            } else {
+                skipUpdate = true;
+            }
+        } else if (viewRef) {
+            this._stats.hits++;
+            // If the view is cached, insert it at the end of the container
+            this._viewContainerRef.insert(viewRef);
+        } else {
+            this._stats.misses++;
+            // Create the view and add it to the end of the container
+            viewRef = this._viewContainerRef.createEmbeddedView(
+                this.virtualItem.templateRef,
+                { $implicit: item, index: globalIndex }
+            );
+        }
+
+        if (!skipUpdate) {
+            this._renderedViews[globalIndex] = viewRef;
+
+            // Initialize the view state
+            viewRef.detectChanges();
+        }
+    }
+
+    private purgeViewCache(): void {
+        if (this.viewCache && this.cacheFull) {
+            const cachedIndices = Object.keys(this._viewCache).map(Number);
+            const direction = this.minIndex >= this.items.length / 2 ? 1 : -1;
+            const startIndex = direction === 1 ? 0 : cachedIndices.length - 1;
+            const endIndex = direction === 1 ? cachedIndices.length - 1 : 0;
+
+            // Iterate through the cache starting from the point furthest from the first rendered index
+            for (let i = startIndex; i != endIndex && this.cacheFull; i += direction) {
+                const viewIndex = cachedIndices[i];
+                // If this view isn't about to be rendered, evict it from the cache and destroy it
+                if (viewIndex < this.minIndex || viewIndex >= this.minIndex + this.renderedItems.length) {
+                    this.destroyViewRefAt(this._viewCache[viewIndex], viewIndex);
+                }
+            }
+        }
+    }
+
     private clearViewCache(): void {
         Object.values(this._viewCache).forEach((viewRef) => {
             if (viewRef) {
-                const viewIndex = this._viewContainerRef.indexOf(viewRef);
-
-                if (viewIndex !== -1) {
-                    this._viewContainerRef.remove(viewIndex);
-                }
-
-                viewRef.destroy();
+                this.destroyViewRef(viewRef);
             }
         });
 
@@ -380,13 +421,7 @@ export class VirtualScroll<T> {
     private clearRenderedViews(): void {
         Object.values(this._renderedViews).forEach((viewRef) => {
             if (viewRef) {
-                const viewIndex = this._viewContainerRef.indexOf(viewRef);
-
-                if (viewIndex !== -1) {
-                    this._viewContainerRef.remove(viewIndex);
-                }
-
-                viewRef.destroy();
+                this.destroyViewRef(viewRef);
             }
         });
 
