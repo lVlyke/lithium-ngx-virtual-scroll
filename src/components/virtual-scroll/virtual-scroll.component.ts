@@ -6,11 +6,14 @@ import {
     ChangeDetectionStrategy,
     ChangeDetectorRef,
     ViewChild,
-    Renderer2
+    Renderer2,
+    EmbeddedViewRef,
+    ViewContainerRef,
+    ViewRef
 } from "@angular/core";
 import { OnDestroy, AfterViewInit, AutoPush, DeclareState, ComponentState, ComponentStateRef } from "@lithiumjs/angular";
 import { Observable, combineLatest, fromEvent, asyncScheduler } from "rxjs";
-import { throttleTime, tap, switchMapTo, filter, switchMap, map, distinctUntilChanged, delay } from "rxjs/operators";
+import { throttleTime, tap, switchMapTo, filter, switchMap, map, distinctUntilChanged, pairwise, withLatestFrom } from "rxjs/operators";
 import { VirtualItem } from "../../directives/virtual-item.directive";
 
 @Component({
@@ -19,12 +22,7 @@ import { VirtualItem } from "../../directives/virtual-item.directive";
     providers: [ComponentState.create(VirtualScroll)],
     template: `
         <div #virtualSpacerBefore class="virtual-spacer virtual-spacer-before"></div>
-        <ng-container *ngIf="virtualItem">
-            <ng-container *ngFor="let renderedItem of renderedItems; let i = index">
-                <ng-container *ngTemplateOutlet="virtualItem.templateRef; context: { $implicit: renderedItem, index: minIndex + i }">
-                </ng-container>
-            </ng-container>
-        </ng-container>
+        <ng-container #hostView></ng-container>
         <div #virtualSpacerAfter class="virtual-spacer virtual-spacer-after"></div>
     `,
     styles: [
@@ -60,8 +58,15 @@ export class VirtualScroll<T> {
     @Input()
     public eventCapture = false;
 
+    @Input()
+    public viewCache: number | boolean = false;
+
     @ContentChild(VirtualItem)
-    public virtualItem!: VirtualItem;
+    @DeclareState()
+    public virtualItem!: VirtualItem<T>;
+
+    @ViewChild("hostView", { read: ViewContainerRef, static: true })
+    public _viewContainerRef!: ViewContainerRef;
 
     @ViewChild("virtualSpacerBefore", { static: true })
     public _virtualSpacerBefore!: ElementRef;
@@ -87,6 +92,9 @@ export class VirtualScroll<T> {
     @DeclareState("maxIndex")
     private _maxIndex = 0;
 
+    private _viewCache: Record<number, EmbeddedViewRef<VirtualItem.ViewContext<T>>> = {};
+    private _renderedViews: Record<number, EmbeddedViewRef<VirtualItem.ViewContext<T>>> = {};
+
     private _listElement!: HTMLElement;
 
     constructor(
@@ -96,6 +104,8 @@ export class VirtualScroll<T> {
         { nativeElement: listElement }: ElementRef<HTMLElement>
     ) {
         AutoPush.enable(this, cdRef);
+
+        let ignoreChanges = false;
 
         this.scrollContainer = this._listElement = listElement;
 
@@ -112,7 +122,17 @@ export class VirtualScroll<T> {
             distinctUntilChanged((prev, cur) => prev.x === cur.x && prev.y === cur.y)
         ).subscribe(scrollPosition => this._scrollPosition = scrollPosition);
 
-        this.onDestroy$.subscribe(() => scrollSubscription.unsubscribe());
+        stateRef.get("items").subscribe(() => this.clearViewCache());
+
+        stateRef.get("viewCache").pipe(
+            filter(viewCache => !viewCache)
+        ).subscribe(() => this.clearViewCache());
+
+        this.onDestroy$.subscribe(() => {
+            this.clearViewCache();
+            this.clearRenderedViews();
+            scrollSubscription.unsubscribe();
+        });
 
         // Dynamically calculate itemWidth if not explicitly passed as an input
         this.afterViewInit$.pipe(
@@ -135,7 +155,7 @@ export class VirtualScroll<T> {
                 )),
                 ...stateRef.getAll("items", "scrollContainer", "bufferLength", "itemWidth", "itemHeight", "gridList")
             ])),
-            filter(([, items]) => items.length > 0)
+            filter(([, items]) => !ignoreChanges && items.length > 0)
         ).subscribe(([
             scrollPosition,
             items,
@@ -148,8 +168,6 @@ export class VirtualScroll<T> {
             if (!itemWidth || !itemHeight) {
                 return; // TODO
             }
-
-            console.log(itemWidth, itemHeight);
 
             const viewportStartX = scrollPosition.x;
             const viewportStartY = scrollPosition.y;
@@ -175,15 +193,121 @@ export class VirtualScroll<T> {
             this._renderedItems = items.slice(this._minIndex, this._maxIndex);
 
             cdRef.reattach();
-            cdRef.markForCheck();
+            cdRef.detectChanges();
 
             const spaceBeforePx = this._minIndex * itemHeight / itemsPerRow;
             const spaceAfterPx = (items.length - 1 - this._maxIndex) * itemHeight / itemsPerRow;
 
-            console.log(scrollPosition, itemsPerRow, this._minIndex, this._maxIndex, spaceBeforePx, spaceAfterPx);
-
             renderer.setStyle(this._virtualSpacerBefore.nativeElement, "height", `${spaceBeforePx}px`);
             renderer.setStyle(this._virtualSpacerAfter.nativeElement, "height", `${spaceAfterPx}px`);
+        });
+
+        stateRef.get("renderedItems").pipe(
+            withLatestFrom(stateRef.get("minIndex")),
+            pairwise()
+        ).subscribe(([
+            [prevRenderedItems, prevMinIndex],
+            [renderedItems, minIndex]
+        ]) => {
+            if (!this.virtualItem) {
+                throw new Error("liVirtualItem not defined.");
+            }
+
+            const movedViews = new Map<T, ViewRef>();
+
+            ignoreChanges = true;
+
+            prevRenderedItems.forEach((renderedItem, index) => {
+                const globalIndex =  prevMinIndex + index;
+                const viewRef = this._renderedViews[globalIndex];
+
+                if (viewRef) {
+                    if (renderedItems.includes(renderedItem)) {
+                        // Mark the view to be moved
+                        movedViews.set(renderedItem, viewRef);
+                    } else {
+                        const viewIndex = this._viewContainerRef.indexOf(viewRef);
+
+                        if (viewIndex !== -1) {
+                            if (this.viewCache) {
+                                // Add the view to the cache
+                                this._viewCache[globalIndex] = viewRef as EmbeddedViewRef<VirtualItem.ViewContext<T>>;
+
+                                // Detach the view from the container
+                                this._viewContainerRef.detach(viewIndex);
+                            } else {
+                                // Destroy the view
+                                delete this._viewCache[globalIndex];
+                                this._viewContainerRef.remove(viewIndex);
+                            }
+                        } else {
+                            // Destroy the view
+                            delete this._viewCache[globalIndex];
+                            viewRef.destroy();
+                        }
+                    }
+
+                    delete this._renderedViews[globalIndex];
+                }
+            });
+
+            if (this.viewCache && this.cacheFull) {
+                const cachedIndices = Object.keys(this._viewCache).map(Number);
+                const direction = minIndex >= this.items.length / 2 ? 1 : -1;
+                const startIndex = direction === 1 ? 0 : cachedIndices.length - 1;
+                const endIndex = direction === 1 ? cachedIndices.length - 1 : 0;
+                for (let i = startIndex; i != endIndex && this.cacheFull; i += direction) {
+                    const viewIndex = cachedIndices[i];
+                    // If this view isn't about to be rendered, evict it from the cache and destroy it
+                    if (viewIndex < minIndex || viewIndex >= minIndex + renderedItems.length) {
+                        const viewRef = this._viewCache[viewIndex];
+                        delete this._viewCache[viewIndex];
+                        const viewRefIndex = this._viewContainerRef.indexOf(viewRef);
+
+                        if (viewRefIndex !== -1) {
+                            this._viewContainerRef.remove(viewIndex);
+                        } else {
+                            viewRef.destroy();
+                        }
+                    }
+                }
+            }
+
+            this.clearRenderedViews();
+
+            renderedItems.forEach((renderedItem, index) => {
+                const globalIndex = minIndex + index;
+                let viewRef: ViewRef = this._viewCache[globalIndex];
+                let skipUpdate = false;
+                
+                if (movedViews.has(renderedItem)) {
+                    viewRef = movedViews.get(renderedItem)!;
+                    const newIndex = this._viewContainerRef.length - 1;
+
+                    if (this._viewContainerRef.indexOf(viewRef) !== newIndex) {
+                        this._viewContainerRef.move(viewRef, newIndex);
+                    } else {
+                        skipUpdate = true;
+                    }
+                } else if (viewRef) {
+                    this._viewContainerRef.insert(viewRef);
+                } else {
+                    viewRef = this._viewContainerRef.createEmbeddedView(
+                        this.virtualItem.templateRef,
+                        { $implicit: renderedItem, index: globalIndex }
+                    );
+                }
+
+                this._renderedViews[globalIndex] = viewRef as EmbeddedViewRef<VirtualItem.ViewContext<T>>;
+
+                if (!skipUpdate) {
+                    // Initialize the view state
+                    viewRef.detectChanges();
+                }
+            });
+
+            ignoreChanges = false;
+            movedViews.clear();
         });
     }
 
@@ -203,6 +327,12 @@ export class VirtualScroll<T> {
         return this._scrollPosition;
     }
 
+    private get cacheFull(): boolean {
+        return (typeof this.viewCache === "boolean")
+        ? !this.viewCache
+        : Object.keys(this._viewCache).length > this.viewCache;
+    }
+
     private get refItemChange(): Observable<HTMLElement> {
         return combineLatest(this.stateRef.getAll("items", "scrollContainer")).pipe(
             filter(([items, scrollContainer]) => !!scrollContainer && items.length > 0),
@@ -211,8 +341,7 @@ export class VirtualScroll<T> {
                     this._renderedItems = [items[0]];
                 }
             }),
-            delay(0),
-            map(([, scrollContainer]) => scrollContainer!.querySelector<HTMLElement>(":not(.virtual-spacer)")),
+            map(([, scrollContainer]) => scrollContainer!.querySelector<HTMLElement>(":scope > :not(.virtual-spacer)")),
             filter((refItem): refItem is HTMLElement => !!refItem)
         );
     }
@@ -230,6 +359,38 @@ export class VirtualScroll<T> {
     private calculateItemHeight(itemEl: HTMLElement): number {
         const style = getComputedStyle(itemEl);
         return itemEl.offsetHeight + parseInt(style.marginTop) + parseInt(style.marginBottom);
+    }
+
+    private clearViewCache(): void {
+        Object.values(this._viewCache).forEach((viewRef) => {
+            if (viewRef) {
+                const viewIndex = this._viewContainerRef.indexOf(viewRef);
+
+                if (viewIndex !== -1) {
+                    this._viewContainerRef.remove(viewIndex);
+                }
+
+                viewRef.destroy();
+            }
+        });
+
+        this._viewCache = {};
+    }
+
+    private clearRenderedViews(): void {
+        Object.values(this._renderedViews).forEach((viewRef) => {
+            if (viewRef) {
+                const viewIndex = this._viewContainerRef.indexOf(viewRef);
+
+                if (viewIndex !== -1) {
+                    this._viewContainerRef.remove(viewIndex);
+                }
+
+                viewRef.destroy();
+            }
+        });
+
+        this._renderedViews = {};
     }
 }
 
