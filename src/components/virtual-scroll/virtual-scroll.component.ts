@@ -66,8 +66,8 @@ import { delayUntil } from "../../operators/delay-until";
 })
 export class VirtualScroll<T> implements VirtualScrollState<T> {
 
-    private static readonly DEFAULT_BUFFER_LENGTH = 2;
-    private static readonly DEFAULT_SCROLL_THROTTLE_MS = 100;
+    private static readonly DEFAULT_BUFFER_LENGTH = 1;
+    private static readonly DEFAULT_SCROLL_THROTTLE_MS = 50;
 
     public readonly recalculateItemSize$ = new ManagedSubject<void>(this);
 
@@ -92,7 +92,13 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
     public itemHeight?: number;
 
     @Input()
+    public scrollDebounceMs = VirtualScroll.DEFAULT_SCROLL_THROTTLE_MS;
+
+    @Input()
     public bufferLength = VirtualScroll.DEFAULT_BUFFER_LENGTH;
+
+    @Input()
+    public viewCache: number | boolean = false;
 
     @Input()
     @DeclareState()
@@ -100,9 +106,6 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
 
     @Input()
     public eventCapture = false;
-
-    @Input()
-    public viewCache: number | boolean = false;
 
     @ContentChild(VirtualItem)
     @DeclareState()
@@ -386,11 +389,13 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
     }
 
     private get scrollDebounce(): Observable<VirtualScroll.ScrollPosition> {
-        return this.stateRef.get("scrollPosition").pipe(throttleTime(
-            VirtualScroll.DEFAULT_SCROLL_THROTTLE_MS, // TODO - Make customizable
-            asyncScheduler,
-            { leading: true, trailing: true }
-        ));
+        return this.stateRef.get("scrollDebounceMs").pipe(
+            switchMap((scrollDebounceMs) => this.stateRef.get("scrollPosition").pipe(throttleTime(
+                scrollDebounceMs,
+                asyncScheduler,
+                { leading: true, trailing: true }
+            )))
+        );
     }
 
     private get scrollStateChange() {
