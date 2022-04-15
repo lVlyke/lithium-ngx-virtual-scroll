@@ -214,6 +214,11 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
                     throw new Error("liVirtualItem directive is not defined.");
                 }
 
+                // Skip updates if nothing has changed
+                if (renderedItems.length === prevRenderedItems?.length && minIndex === prevMinIndex) {
+                    return EMPTY;
+                }
+
                 // Unrender all items that are no longer rendered
                 prevRenderedItems?.forEach((renderedItem, index) => {
                     const globalIndex =  prevMinIndex! + index;
