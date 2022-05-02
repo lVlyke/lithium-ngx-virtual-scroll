@@ -1,8 +1,8 @@
 {
   "name": "@lithiumjs/ngx-virtual-scroll",
-  "description": "A fast virtual scrolling solution for Angular that natively supports items with unequal heights. Built with @lithiumjs/angular.",
+  "description": "A fast and lightweight virtual scrolling solution for Angular that supports single column lists, grid lists and view caching.",
   "repository": "https://github.com/lVlyke/lithium-ngx-virtual-scroll",
-  "version": "0.0.6",
+  "version": "0.1.0",
   "main": "index.js",
   "author": "Mychal Thompson <mychalrthompson@gmail.com>",
   "license": "MIT",

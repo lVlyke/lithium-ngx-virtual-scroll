@@ -3,9 +3,14 @@ import { Directive, TemplateRef } from "@angular/core";
 @Directive({
     selector: "[liVirtualItem]"
 })
-export class VirtualItem {
+export class VirtualItem<T> {
 
     constructor(
-        public readonly templateRef: TemplateRef<HTMLElement>
+        public readonly templateRef: TemplateRef<VirtualItem.ViewContext<T>>
     ) {}
+}
+
+export namespace VirtualItem {
+
+    export type ViewContext<T> = { $implicit: T, index: number };
 }
