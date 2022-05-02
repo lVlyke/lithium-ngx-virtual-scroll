@@ -11,11 +11,28 @@ import {
     ViewContainerRef,
     TemplateRef,
     Inject,
-    Output
+    Output,
+    NgZone
 } from "@angular/core";
 import { OnDestroy, AfterViewInit, AutoPush, DeclareState, ComponentState, ComponentStateRef, ManagedSubject } from "@lithiumjs/angular";
 import { Observable, combineLatest, fromEvent, asyncScheduler, forkJoin, EMPTY } from "rxjs";
-import { throttleTime, tap, switchMapTo, filter, switchMap, map, distinctUntilChanged, withLatestFrom, startWith, pairwise, delay, skip, take, mapTo, mergeMap } from "rxjs/operators";
+import {
+    throttleTime,
+    tap,
+    switchMapTo,
+    filter,
+    switchMap,
+    map,
+    distinctUntilChanged,
+    withLatestFrom,
+    startWith,
+    pairwise,
+    delay,
+    skip,
+    take,
+    mapTo,
+    mergeMap
+} from "rxjs/operators";
 import { VirtualItem } from "../../directives/virtual-item.directive";
 import { VirtualPlaceholder } from "../../directives/virtual-placeholder.directive";
 import { VirtualScrollStrategy } from "./scroll-strategy/virtual-scroll-strategy";
@@ -156,6 +173,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
         @Inject(LI_VIRTUAL_SCROLL_STRATEGY) private readonly scrollStrategy: VirtualScrollStrategy<T>,
         private readonly stateRef: ComponentStateRef<VirtualScroll<T>>,
         private readonly renderer: Renderer2,
+        private readonly zone: NgZone,
         cdRef: ChangeDetectorRef,
         { nativeElement: listElement }: ElementRef<HTMLElement>
     ) {
@@ -205,20 +223,20 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
         // Recalculate views on rendered items changes
         this.afterViewInit$.pipe(
             switchMap(() => stateRef.get("renderedItems").pipe(
-                withLatestFrom(stateRef.get("minIndex")),
+                withLatestFrom(...stateRef.getAll("items", "minIndex")),
                 pairwise(),
-                startWith([[], [[] as T[], 0]] as const)
+                startWith([[], [[] as T[], [] as T[], 0]] as const)
             )),
             mergeMap(([
-                [prevRenderedItems, prevMinIndex],
-                [renderedItems, minIndex],
+                [prevRenderedItems, prevItems, prevMinIndex],
+                [renderedItems, items, minIndex],
             ]) => {
                 if (!this.virtualItem) {
                     throw new Error("liVirtualItem directive is not defined.");
                 }
 
                 // Skip updates if nothing has changed
-                if (renderedItems.length === prevRenderedItems?.length && minIndex === prevMinIndex) {
+                if (prevItems === items && renderedItems.length === prevRenderedItems?.length && minIndex === prevMinIndex) {
                     return EMPTY;
                 }
 
@@ -264,20 +282,6 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
             // Decrement render job count
             --this._renderJobCount;
         });
-
-        // Dynamically calculate itemWidth if not explicitly passed as an input
-        this.afterViewInit$.pipe(
-            withNextFrom(stateRef.get("itemWidth")),
-            filter(([, itemWidth]) => itemWidth === undefined),
-            switchMap(() => this.refItemChange)
-        ).subscribe(refItem => this.itemWidth = this.calculateItemWidth(refItem));
-
-        // Dynamically calculate itemHeight if not explicitly passed as an input
-        this.afterViewInit$.pipe(
-            withNextFrom(stateRef.get("itemHeight")),
-            filter(([, itemHeight]) => itemHeight === undefined),
-            switchMap(() => this.refItemChange)
-        ).subscribe(refItem => this.itemHeight = this.calculateItemHeight(refItem));
 
         // Recalculate rendered items on scroll state changes
         this.afterViewInit$.pipe(
@@ -331,6 +335,20 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
             renderer.setStyle(this._virtualSpacerBefore.nativeElement, "height", `${spaceBeforePx}px`);
             renderer.setStyle(this._virtualSpacerAfter.nativeElement, "height", `${spaceAfterPx}px`);
         });
+
+        // Dynamically calculate itemWidth if not explicitly passed as an input
+        this.afterViewInit$.pipe(
+            withNextFrom(stateRef.get("itemWidth")),
+            filter(([, itemWidth]) => itemWidth === undefined),
+            switchMap(() => this.refItemChange)
+        ).subscribe(refItem => this.itemWidth = this.calculateItemWidth(refItem));
+
+        // Dynamically calculate itemHeight if not explicitly passed as an input
+        this.afterViewInit$.pipe(
+            withNextFrom(stateRef.get("itemHeight")),
+            filter(([, itemHeight]) => itemHeight === undefined),
+            switchMap(() => this.refItemChange)
+        ).subscribe(refItem => this.itemHeight = this.calculateItemHeight(refItem));
     }
 
     public get minIndex(): number {
@@ -381,7 +399,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
         return this.stateRef.get("scrollContainer").pipe(
             filter(c => !!c),
             switchMap((scrollContainer) => new Observable((observer) => {
-                const res = new ResizeObserver(() => observer.next());
+                const res = new ResizeObserver(() => this.zone.run(() => observer.next()));
                 res.observe(scrollContainer!);
                 this.onDestroy$.subscribe(() => (res.disconnect(), observer.complete()));
             }))

@@ -2,6 +2,8 @@
 
 A fast and lightweight virtual scrolling solution for Angular that supports single column lists, grid lists and view caching.
 
+## [Live demo](https://lvlyke.github.io/lithium-ngx-virtual-scroll-demo/)
+
 ## How to use
 
 @lithiumjs/ngx-virtual-scroll requires [@lithiumjs/angular](https://github.com/lVlyke/lithium-angular). Both can be installed from npm:
