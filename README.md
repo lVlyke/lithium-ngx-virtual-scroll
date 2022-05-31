@@ -132,15 +132,16 @@ Component used to create a virtual scrolling container.
 #### **Inputs**
 
 * **`items`** - The list of items to render.
-* **`gridList`** - (Optional) Whether or not the list is a grid list with multiple items per row. Defaults to `false`.
 * **`asyncRendering`** - (Optional) Whether or not to enable asynchronous rendering of views, which loads in placeholder elements while rendering items. Defaults to `false`.
+* **`bufferLength`** - (Optional) How much extra list content should be rendered, measured in multiples of the list container's client height. This helps improve scrolling responsiveness for fast scrolling. Defaults to `1`.
+* **`eventCapture`** - (Optional) Whether or not to use event capture mode for capturing scroll events from `scrollContainer`. Defaults to `false`.
+* **`gridList`** - (Optional) Whether or not the list is a grid list with multiple items per row. Defaults to `false`.
 * **`itemWidth`** - (Optional) The width of each item being rendered, in pixels. Calculated automatically if not given.
 * **`itemHeight`** - (Optional) The height of each item being rendered, in pixels. Calculated automatically if not given.
-* **`scrollDebounceMs`** - (Optional) How often to respond to scroll position changes, in milliseconds. Defaults to `50`.
-* **`bufferLength`** - (Optional) How much extra list content should be rendered, measured in multiples of the list container's client height. This helps improve scrolling responsiveness for fast scrolling. Defaults to `1`.
-* **`viewCache`** - (Optional) Whether views can be cached. Can be a boolean or a number representing the maximum number of views to cache at a given time. Defaults to `false`.
 * **`scrollContainer`** - (Optional) The HTML element to use as the scroll container. Defaults to the host element.
-* **`eventCapture`** - (Optional) Whether or not to use event capture mode for capturing scroll events from `scrollContainer`. Defaults to `false`.
+* **`scrollDebounceMs`** - (Optional) How often to respond to scroll position changes, in milliseconds. Defaults to `50`.
+* **`trackBy`** - (Optional) A [`TrackByFunction`](https://angular.io/api/core/TrackByFunction) used to compute the identity of items. Defaults to a function returning the item reference.
+* **`viewCache`** - (Optional) Whether views can be cached. Can be a boolean or a number representing the maximum number of views to cache at a given time. Defaults to `false`.
 
 ### `VirtualItem` (`[liVirtualItem]`)
 
@@ -191,28 +192,29 @@ export interface VirtualScrollStrategy<T> {
         scrollState: VirtualScrollState<T>,
         viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>
     ): void;
-    destroyViewRefAt(
+
+    destroyView(
         scrollState: VirtualScrollState<T>,
-        viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>,
-        globalIndex: number
+        view: VirtualScrollState.ViewInfo<T>
     ): void;
-    cacheViewRefAt(
+
+    cacheView(
         scrollState: VirtualScrollState<T>,
-        viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>,
-        globalIndex: number
+        view: VirtualScrollState.ViewInfo<T>
     ): void;
-    renderViewForItemAt(
+
+    renderViewForItem(
         scrollState: VirtualScrollState<T>,
         item: T,
         globalIndex: number,
-        renderedViewIndices: number[],
         deferViewCreation?: boolean
-    ): Observable<EmbeddedViewRef<VirtualItem.ViewContext<T>>>;
-    unrenderViewRefAt(
+    ): Observable<VirtualScrollState.ViewInfo<T>>;
+
+    unrenderView(
         scrollState: VirtualScrollState<T>,
-        viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>,
-        globalIndex: number
+        view: VirtualScrollState.ViewInfo<T>
     ): void;
+
     purgeViewCache(scrollState: VirtualScrollState<T>): void;
 }
 ```

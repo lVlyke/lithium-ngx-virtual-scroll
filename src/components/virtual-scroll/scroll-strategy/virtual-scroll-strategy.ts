@@ -9,27 +9,28 @@ export interface VirtualScrollStrategy<T> {
         scrollState: VirtualScrollState<T>,
         viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>
     ): void;
-    destroyViewRefAt(
+
+    destroyView(
         scrollState: VirtualScrollState<T>,
-        viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>,
-        globalIndex: number
+        view: VirtualScrollState.ViewInfo<T>
     ): void;
-    cacheViewRefAt(
+
+    cacheView(
         scrollState: VirtualScrollState<T>,
-        viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>,
-        globalIndex: number
+        view: VirtualScrollState.ViewInfo<T>
     ): void;
-    renderViewForItemAt(
+
+     renderViewForItem(
         scrollState: VirtualScrollState<T>,
         item: T,
         globalIndex: number,
-        renderedViewIndices: number[],
         deferViewCreation?: boolean
-    ): Observable<EmbeddedViewRef<VirtualItem.ViewContext<T>>>;
-    unrenderViewRefAt(
+    ): Observable<VirtualScrollState.ViewInfo<T>>;
+
+    unrenderView(
         scrollState: VirtualScrollState<T>,
-        viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>,
-        globalIndex: number
+        view: VirtualScrollState.ViewInfo<T>
     ): void;
+
     purgeViewCache(scrollState: VirtualScrollState<T>): void;
 }
