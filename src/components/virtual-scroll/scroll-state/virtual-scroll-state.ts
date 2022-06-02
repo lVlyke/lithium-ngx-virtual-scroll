@@ -9,6 +9,7 @@ export interface VirtualScrollState<T> {
     readonly viewCache: number | boolean;
     readonly minIndex: number;
     readonly maxIndex: number;
+    readonly lastScrollOffset: VirtualScrollState.Point;
     readonly trackBy: TrackByFunction<T>;
 
     readonly virtualItem: VirtualItem<T>;
@@ -28,6 +29,11 @@ export interface VirtualScrollState<T> {
 }
 
 export namespace VirtualScrollState {
+
+    export interface Point {
+        x: number;
+        y: number;
+    }
 
     export interface ViewInfo<T> {
         viewRef: EmbeddedViewRef<VirtualItem.ViewContext<T>>;

@@ -160,7 +160,7 @@ export class DefaultVirtualScrollStrategy<T> implements VirtualScrollStrategy<T>
         if (this.cacheFull(scrollState)) {
             const cachedViews = scrollState.cachedViews;
             const minIndex = scrollState.minIndex;
-            const direction = minIndex >= scrollState.items.length / 2 ? 1 : -1;
+            const direction = scrollState.lastScrollOffset.y >= 0 ? 1 : -1;
             const startIndex = direction === 1 ? 0 : cachedViews.length - 1;
             const endIndex = direction === 1 ? cachedViews.length - 1 : 0;
 
