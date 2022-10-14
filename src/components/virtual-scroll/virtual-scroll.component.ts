@@ -294,7 +294,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
         this.afterViewInit$.pipe(
             switchMapTo(this.scrollStateChange),
             // Skip updates if we're ignoring scroll updates or item info isn't defined
-            filter(([, , items, itemWidth, itemHeight]) => !this.renderingViews && !!itemWidth && !!itemHeight && items.length > 0)
+            filter(([, , , itemWidth, itemHeight]) => !this.renderingViews && !!itemWidth && !!itemHeight)
         ).subscribe(([
             ,
             scrollPosition,

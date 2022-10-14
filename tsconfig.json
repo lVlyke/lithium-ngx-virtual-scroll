@@ -1,11 +1,4 @@
+// Dummy tsconfig file for VSCode
 {
-    "extends": "./node_modules/ng-packagr/lib/ts/conf/tsconfig.ngc.json",
-    "compilerOptions": {
-        "strict": true,
-        "experimentalDecorators": true
-    },
-    "files": [],
-    "include": [
-        "src/**/*.ts"
-    ]
+    "extends": "./tsconfig.lib.json"
 }
