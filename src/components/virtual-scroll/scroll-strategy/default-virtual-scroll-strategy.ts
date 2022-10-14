@@ -167,8 +167,13 @@ export class DefaultVirtualScrollStrategy<T> implements VirtualScrollStrategy<T>
             // Iterate through the cache starting from the point furthest from the first rendered index
             for (let i = startIndex; i != endIndex && this.cacheFull(scrollState); i += direction) {
                 const view = cachedViews[i];
+
+                // If the view was destroyed externally, remove it from the cache
+                if (view.viewRef.destroyed) {
+                    this.destroyView(scrollState, view);
+                }
                 // If this view isn't about to be rendered, evict it from the cache and destroy it
-                if (view.itemIndex < minIndex || view.itemIndex >= minIndex + scrollState.renderedItems.length) {
+                else if (view.itemIndex < minIndex || view.itemIndex >= minIndex + scrollState.renderedItems.length) {
                     this.destroyView(scrollState, view);
                 }
             }

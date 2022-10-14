@@ -540,7 +540,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
     private cleanViewCache(): void {
         // Destroy all cached views that are no longer valid for current items
         for (let [trackByKey, view] of this._cachedViews.entries()) {
-            if (!this.isViewForAnyItems(view)) {
+            if (!this.isViewForAnyItems(view) || view.viewRef.destroyed) {
                 this.scrollStrategy.destroyViewRef(this, view.viewRef);
                 this._cachedViews.delete(trackByKey);
             }
