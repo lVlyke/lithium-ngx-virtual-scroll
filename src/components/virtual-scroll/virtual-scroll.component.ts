@@ -54,7 +54,8 @@ const TRACK_BY_IDENTITY_FN = <T>(_index: number, item: T) => item;
         ComponentState.create(VirtualScroll)
     ],
     host: {
-        "[attr.grid-list]": "gridList || null"
+        "[attr.grid-list]": "gridList || null",
+        "[style.display]": "'block'"
     },
     template: `
         <div #virtualSpacerBefore class="virtual-spacer virtual-spacer-before"></div>
@@ -318,7 +319,8 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
             const bufferLengthPx = (scrollContainer!.clientHeight) * bufferLength;
 
             // Calculate the number of rendered items per row
-            const itemsPerRow = gridList ? Math.floor(scrollContainer!.clientWidth / itemWidth!) : 1;
+            const containerWidth = this._listElement.clientWidth || scrollContainer!.clientWidth;
+            const itemsPerRow = gridList ? Math.floor(containerWidth / itemWidth!) : 1;
             const virtualScrollHeight = items.length * itemHeight! / itemsPerRow;
 
             // Adjust the bounds by the buffer length and clamp to the edges of the container
@@ -493,7 +495,6 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
 
     private applyScrollContainerStyles(apply: boolean) {
         this._listElement.style.overflowY = apply ? "scroll" : "initial";
-        this._listElement.style.display = apply ? "block" : "initial";
     }
 
     private calculateItemWidth(itemEl: HTMLElement): number {
