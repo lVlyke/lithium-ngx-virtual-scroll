@@ -35,6 +35,21 @@ If the list being rendered is a grid list with multiple items per row, make sure
     </li-virtual-scroll>
 ```
 
+
+### Item width/height
+
+All items in the list are assumed to be the same size. The item width/height in pixels for each item can be explicitly declared by using the `itemWidth` and `itemHeight` inputs:
+
+```html
+    <li-virtual-scroll [items]="items" [itemWidth]="128" [itemHeight]="128">
+        <div *liVirtualItem="let item">
+            {{ item.name }}
+        </div>
+    </li-virtual-scroll>
+```
+
+If `itemWidth` or `itemHeight` is not explicitly declared, it will be calculated by rendering the first item in the list and recording its size.
+
 ### Asynchronous view rendering
 
 Asynchronous view rendering can be used to improve scrolling responsiveness for items with complex views. When enabled, a placeholder element will be temporarily be shown while the item is rendered asynchronously. The placeholder element can be customized using the `liVirtualPlaceholder` directive:
@@ -136,8 +151,8 @@ Component used to create a virtual scrolling container.
 * **`bufferLength`** - (Optional) How much extra list content should be rendered, measured in multiples of the list container's client height. This helps improve scrolling responsiveness for fast scrolling. Defaults to `1`.
 * **`eventCapture`** - (Optional) Whether or not to use event capture mode for capturing scroll events from `scrollContainer`. Defaults to `false`.
 * **`gridList`** - (Optional) Whether or not the list is a grid list with multiple items per row. Defaults to `false`.
-* **`itemWidth`** - (Optional) The width of each item being rendered, in pixels. Calculated automatically if not given.
-* **`itemHeight`** - (Optional) The height of each item being rendered, in pixels. Calculated automatically if not given.
+* **`itemWidth`** - (Optional) The width of each item being rendered, in pixels. Calculated automatically based on the width of the first item if not given.
+* **`itemHeight`** - (Optional) The height of each item being rendered, in pixels. Calculated automatically based on the height of the first item if not given.
 * **`scrollContainer`** - (Optional) The HTML element to use as the scroll container. Defaults to the host element.
 * **`scrollDebounceMs`** - (Optional) How often to respond to scroll position changes, in milliseconds. Defaults to `50`.
 * **`trackBy`** - (Optional) A [`TrackByFunction`](https://angular.io/api/core/TrackByFunction) used to compute the identity of items. Defaults to a function returning the item reference.

@@ -166,6 +166,9 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
     @DeclareState("maxIndex")
     private _maxIndex = 0;
 
+    @DeclareState("itemsPerRow")
+    private _itemsPerRow = 0;
+
     @DeclareState("renderingViews")
     private _renderingViews = false;
 
@@ -327,6 +330,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
             cdRef.detach();
 
             // Calculate which items should be rendered on screen
+            this._itemsPerRow = itemsPerRow;
             this._minIndex = Math.min(items.length - 1, Math.floor(renderedBounds.top / itemHeight!) * itemsPerRow);
             this._maxIndex = Math.min(items.length - 1, Math.ceil(renderedBounds.bottom / itemHeight!) * itemsPerRow);
             this._renderedItems = items.slice(this._minIndex, this._maxIndex + 1);
@@ -364,6 +368,10 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
 
     public get maxIndex(): number {
         return this._maxIndex;
+    }
+
+    public get itemsPerRow() {
+        return this._itemsPerRow;
     }
 
     public get renderedItems(): T[] {

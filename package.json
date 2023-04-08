@@ -2,7 +2,7 @@
   "name": "@lithiumjs/ngx-virtual-scroll",
   "description": "A fast and lightweight virtual scrolling solution for Angular that supports single column lists, grid lists and view caching.",
   "repository": "https://github.com/lVlyke/lithium-ngx-virtual-scroll",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "main": "index.js",
   "author": "Mychal Thompson <mychalrthompson@gmail.com>",
   "license": "MIT",
