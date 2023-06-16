@@ -54,8 +54,7 @@ const TRACK_BY_IDENTITY_FN = <T>(_index: number, item: T) => item;
         ComponentState.create(VirtualScroll)
     ],
     host: {
-        "[attr.grid-list]": "gridList || null",
-        "[style.display]": "'block'"
+        "[attr.grid-list]": "gridList || null"
     },
     template: `
         <div #virtualSpacerBefore class="virtual-spacer virtual-spacer-before"></div>
@@ -79,6 +78,7 @@ const TRACK_BY_IDENTITY_FN = <T>(_index: number, item: T) => item;
         </ng-template>
     `,
     styles: [
+        ":host { display: block; }",
         ".virtual-spacer { width: 100%; }",
         ":host[grid-list] .virtual-placeholder { display: inline-block; }"
     ]
