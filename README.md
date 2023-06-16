@@ -153,7 +153,6 @@ Component used to create a virtual scrolling container.
 * **`gridList`** - (Optional) Whether or not the list is a grid list with multiple items per row. Defaults to `false`.
 * **`itemWidth`** - (Optional) The width of each item being rendered, in pixels. Calculated automatically based on the width of the first item if not given.
 * **`itemHeight`** - (Optional) The height of each item being rendered, in pixels. Calculated automatically based on the height of the first item if not given.
-* **`scrollContainer`** - (Optional) The HTML element to use as the scroll container. Defaults to the host element.
 * **`scrollDebounceMs`** - (Optional) How often to respond to scroll position changes, in milliseconds. Defaults to `50`.
 * **`trackBy`** - (Optional) A [`TrackByFunction`](https://angular.io/api/core/TrackByFunction) used to compute the identity of items. Defaults to a function returning the item reference.
 * **`viewCache`** - (Optional) Whether views can be cached. Can be a boolean or a number representing the maximum number of views to cache at a given time. Defaults to `false`.
