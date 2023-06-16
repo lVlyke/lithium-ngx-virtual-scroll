@@ -15,7 +15,7 @@ import {
     TrackByFunction
 } from "@angular/core";
 import { OnDestroy, AfterViewInit, AutoPush, DeclareState, ComponentState, ComponentStateRef, ManagedSubject } from "@lithiumjs/angular";
-import { Observable, combineLatest, fromEvent, asyncScheduler, forkJoin, EMPTY } from "rxjs";
+import { Observable, combineLatest, fromEvent, asyncScheduler, forkJoin, EMPTY, merge, of } from "rxjs";
 import {
     throttleTime,
     tap,
@@ -123,10 +123,6 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
     public trackBy: TrackByFunction<T> = TRACK_BY_IDENTITY_FN;
 
     @Input()
-    @DeclareState()
-    public scrollContainer?: HTMLElement;
-
-    @Input()
     public eventCapture = false;
 
     @ContentChild(VirtualItem)
@@ -154,6 +150,9 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
 
     @OnDestroy()
     private readonly onDestroy$!: Observable<void>;
+
+    @DeclareState("scrollContainer")
+    private _scrollContainer: HTMLElement;
 
     @DeclareState("renderedItems")
     private _renderedItems: T[] = [];
@@ -188,7 +187,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
     ) {
         AutoPush.enable(this, cdRef);
 
-        this.scrollContainer = this._listElement = listElement;
+        this._scrollContainer = this._listElement = listElement;
 
         // Update the current scroll position on scroll changes
         const scrollSubscription = combineLatest(stateRef.getAll(
@@ -196,12 +195,16 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
             "eventCapture"
         )).pipe(
             tap(([scrollContainer]) => this.applyScrollContainerStyles(scrollContainer === listElement)),
-            switchMap(([scrollContainer, capture]) => fromEvent<MouseEvent>(scrollContainer!, "scroll", { capture })),
-            map((scrollEvent) => ({
-                x: (scrollEvent.target as HTMLElement).scrollLeft,
-                y: (scrollEvent.target as HTMLElement).scrollTop
-            })),
-            startWith({ x: 0, y: 0 }),
+            switchMap(([scrollContainer, capture]) => merge(
+                fromEvent<MouseEvent>(scrollContainer, "scroll", { capture }),
+                this.scrollContainerResize(scrollContainer),
+                of({ x: 0, y: 0 })
+            ).pipe(
+                map(() => ({
+                    x: scrollContainer.scrollLeft,
+                    y: scrollContainer.scrollTop
+                })),
+            )),
             distinctUntilChanged((prev, cur) => prev.x === cur.x && prev.y === cur.y)
         ).subscribe(scrollPosition => {
             this._lastScrollOffset.x = scrollPosition.x - this._scrollPosition.x;
@@ -298,9 +301,8 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
         this.afterViewInit$.pipe(
             switchMapTo(this.scrollStateChange),
             // Skip updates if we're ignoring scroll updates or item info isn't defined
-            filter(([, , , itemWidth, itemHeight]) => !this.renderingViews && ((!!itemWidth || !this.gridList) && !!itemHeight)),
+            filter(([, , itemWidth, itemHeight]) => !this.renderingViews && ((!!itemWidth || !this.gridList) && !!itemHeight)),
         ).subscribe(([
-            ,
             scrollPosition,
             items,
             itemWidth,
@@ -313,14 +315,13 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
             const renderedBounds: VirtualScroll.Rect = {
                 left: scrollPosition.x,
                 top: scrollPosition.y,
-                right: scrollPosition.x + scrollContainer!.clientWidth,
-                bottom: scrollPosition.y + scrollContainer!.clientHeight
+                right: scrollPosition.x + scrollContainer.clientWidth,
+                bottom: scrollPosition.y + scrollContainer.clientHeight
             };
-            const bufferLengthPx = (scrollContainer!.clientHeight) * bufferLength;
+            const bufferLengthPx = (scrollContainer.clientHeight) * bufferLength;
 
             // Calculate the number of rendered items per row
-            const containerWidth = this._listElement.clientWidth || scrollContainer!.clientWidth;
-            const itemsPerRow = gridList ? Math.floor(containerWidth / itemWidth!) : 1;
+            const itemsPerRow = gridList ? Math.floor(scrollContainer.clientWidth / itemWidth!) : 1;
             const virtualScrollHeight = items.length * itemHeight! / itemsPerRow;
 
             // Adjust the bounds by the buffer length and clamp to the edges of the container
@@ -342,7 +343,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
 
             // Calculate the virtual scroll space before/after the rendered items
             const spaceBeforePx = Math.floor(this._minIndex / itemsPerRow) * itemHeight!;
-            const spaceAfterPx = Math.floor((items.length - this._maxIndex) / itemsPerRow) * itemHeight!;
+            const spaceAfterPx = Math.floor((items.length - (this._maxIndex + 1)) / itemsPerRow) * itemHeight!;
 
             // Update the virtual spacers in the DOM
             renderer.setStyle(this._virtualSpacerBefore.nativeElement, "height", `${spaceBeforePx}px`);
@@ -362,6 +363,10 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
             filter(([, itemHeight]) => itemHeight === undefined),
             switchMap(() => this.refItemChange)
         ).subscribe(refItem => this.itemHeight = this.calculateItemHeight(refItem));
+    }
+
+    public get scrollContainer(): HTMLElement {
+        return this._scrollContainer;
     }
 
     public get minIndex(): number {
@@ -436,15 +441,12 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
         this.updateViewInfo(this._renderedViews, view);
     }
 
-    private get scrollContainerResize(): Observable<unknown> {
-        return this.stateRef.get("scrollContainer").pipe(
-            filter(c => !!c),
-            switchMap((scrollContainer) => new Observable((observer) => {
-                const res = new ResizeObserver(() => this.zone.run(() => observer.next()));
-                res.observe(scrollContainer!);
-                this.onDestroy$.subscribe(() => (res.disconnect(), observer.complete()));
-            }))
-        );
+    private scrollContainerResize(scrollContainer: HTMLElement): Observable<unknown> {
+        return new Observable((observer) => {
+            const res = new ResizeObserver(() => this.zone.run(() => observer.next()));
+            res.observe(scrollContainer);
+            this.onDestroy$.subscribe(() => (res.disconnect(), observer.complete()));
+        });
     }
 
     private get scrollDebounce(): Observable<VirtualScrollState.Point> {
@@ -459,8 +461,6 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
 
     private get scrollStateChange() {
         return combineLatest([
-            // Listen for resizes on the scroll container
-            this.scrollContainerResize,
             // Listen for scroll position changes
             this.scrollDebounce,
             // Listen for list state changes that affect rendering
@@ -488,7 +488,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
                     this._renderedItems = [items[0]];
                 }
             }),
-            map(([, scrollContainer]) => scrollContainer!.querySelector<HTMLElement>(":scope > :not(.virtual-spacer)")),
+            map(([, scrollContainer]) => scrollContainer.querySelector<HTMLElement>(":scope > :not(.virtual-spacer)")),
             filter((refItem): refItem is HTMLElement => !!refItem)
         );
     }
