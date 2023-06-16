@@ -68,8 +68,8 @@ const TRACK_BY_IDENTITY_FN = <T>(_index: number, item: T) => item;
 
             <ng-template #defaultPlaceholderTemplate>
                 <div class="virtual-placeholder"
-                    [style.width]="itemWidth + 'px'"
-                    [style.max-width]="itemWidth + 'px'"
+                    [style.width]="gridList ? itemWidth + 'px' : null"
+                    [style.max-width]="gridList ? itemWidth + 'px' : null"
                     [style.height]="itemHeight + 'px'"
                     [style.max-height]="itemHeight + 'px'"
                     [style.margin]="0">
