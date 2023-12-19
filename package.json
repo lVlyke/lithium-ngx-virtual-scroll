@@ -2,42 +2,42 @@
   "name": "@lithiumjs/ngx-virtual-scroll",
   "description": "A fast and lightweight virtual scrolling solution for Angular that supports single column lists, grid lists and view caching.",
   "repository": "https://github.com/lVlyke/lithium-ngx-virtual-scroll",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "main": "index.js",
   "author": "Mychal Thompson <mychalrthompson@gmail.com>",
   "license": "MIT",
   "private": false,
   "type": "module",
   "scripts": {
-    "prebuild:js": "yarn test",
+    "prebuild:js": "npm run test",
     "build:js": "node ./scripts/build.js",
     "pretest": "node ./scripts/pretest.js",
     "test": "node ./scripts/test.js"
   },
   "peerDependencies": {
-    "@angular/common": "8.x.x - 16.x.x",
-    "@angular/core": "8.x.x - 16.x.x",
+    "@angular/common": "8.x.x - 17.x.x",
+    "@angular/core": "8.x.x - 17.x.x",
     "@lithiumjs/angular": ">=7.0.0",
     "rxjs": "6.x.x - 7.x.x"
   },
   "devDependencies": {
-    "@angular/common": "^16.1.1",
-    "@angular/compiler": "^16.1.1",
-    "@angular/compiler-cli": "^16.1.1",
-    "@angular/core": "^16.1.1",
-    "@lithiumjs/angular": "^7.3.0",
+    "@angular/common": "^17.0.7",
+    "@angular/compiler": "^17.0.7",
+    "@angular/compiler-cli": "^17.0.7",
+    "@angular/core": "^17.0.7",
+    "@lithiumjs/angular": "^7.3.1",
     "@types/jasmine": "^4.3.1",
+    "c8": "^8.0.1",
     "detest-bdd": "^1.2.1",
+    "extensionless": "^1.9.6",
     "fs-extra": "^11.0.1",
-    "istanbul": "^0.4.5",
     "istanbul-cobertura-badger": "^1.3.1",
     "jasmine": "^4.6.0",
-    "ng-packagr": "16.1.0",
+    "ng-packagr": "17.0.3",
     "rxjs": "~7.4.0",
     "source-map-support": "^0.5.12",
     "tslib": "^2.3.0",
-    "typescript": "~4.9.5",
-    "zone.js": "~0.13.0"
-  },
-  "dependencies": {}
+    "typescript": "~5.2.2",
+    "zone.js": "~0.14.2"
+  }
 }
