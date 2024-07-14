@@ -321,7 +321,13 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
             const bufferLengthPx = (scrollContainer.clientHeight) * bufferLength;
 
             // Calculate the number of rendered items per row
-            const itemsPerRow = gridList ? Math.floor(scrollContainer.clientWidth / itemWidth!) : 1;
+            let itemsPerRow = gridList ? Math.floor(scrollContainer.clientWidth / itemWidth!) : 1;
+
+            // Don't reset items per row to 0 on view change as it invalidates the viewCache
+            if (itemsPerRow === 0 && this._itemsPerRow > 0) {
+                itemsPerRow = this._itemsPerRow;
+            }
+
             const virtualScrollHeight = items.length * itemHeight! / itemsPerRow;
 
             // Adjust the bounds by the buffer length and clamp to the edges of the container
