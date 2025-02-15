@@ -170,7 +170,7 @@ This can happen when your list element has an unlimited height. The `li-virtual-
 
 This usually happens when your list item elements do not have a constant size and you have not explicitly declared `itemWidth`/`itemHeight`.
 
-If your list container uses a layout that dynamically resizes elements (i.e. flexbox), you must ensure that the items have a constant size for the automatic width/height calculation to work correctly. If this is not possible, you must instead explicitly declare the item size using the `itemWidth`/`itemHeight` inputs. See [this section](#item-element-size) for more information.
+If your list container uses a layout that dynamically resizes elements (i.e. flexbox), you must ensure that the items have a constant size for the automatic width/height calculation to work correctly. The easiest way to achieve this is to add a fixed width/height in CSS. If this is not possible, you must instead explicitly declare the item size using the `itemWidth`/`itemHeight` inputs. See [this section](#item-element-size) for more information.
 
 ## Not enough items are rendered
 

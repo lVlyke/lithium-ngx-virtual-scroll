@@ -44,6 +44,7 @@ import { delayUntil } from "../../operators/delay-until";
 const TRACK_BY_IDENTITY_FN = <T>(_index: number, item: T) => item;
 
 @Component({
+    standalone: false,
     selector: "li-virtual-scroll",
     changeDetection: ChangeDetectionStrategy.OnPush,
     providers: [
