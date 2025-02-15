@@ -200,16 +200,18 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
                 this.scrollContainerResize(scrollContainer),
                 of({ x: 0, y: 0 })
             ).pipe(
-                map(() => ({
-                    x: scrollContainer.scrollLeft,
-                    y: scrollContainer.scrollTop
-                })),
+                map((): VirtualScroll.Rect => ({
+                    left: scrollContainer.scrollLeft,
+                    top: scrollContainer.scrollTop,
+                    right: scrollContainer.scrollLeft + scrollContainer.clientWidth,
+                    bottom: scrollContainer.scrollTop + scrollContainer.clientHeight
+                }))
             )),
-            distinctUntilChanged((prev, cur) => prev.x === cur.x && prev.y === cur.y)
-        ).subscribe(scrollPosition => {
-            this._lastScrollOffset.x = scrollPosition.x - this._scrollPosition.x;
-            this._lastScrollOffset.y = scrollPosition.y - this._scrollPosition.y;
-            this._scrollPosition = scrollPosition;
+            distinctUntilChanged((prev, cur) => prev.left === cur.left && prev.top === cur.top && prev.right === cur.right && prev.bottom === cur.bottom)
+        ).subscribe((containerBounds) => {
+            this._lastScrollOffset.x = containerBounds.left - this._scrollPosition.x;
+            this._lastScrollOffset.y = containerBounds.top - this._scrollPosition.y;
+            this._scrollPosition = { x: containerBounds.left, y: containerBounds.top };
         });
 
         // Clear all views if the trackBy changes
@@ -301,7 +303,10 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
         this.afterViewInit$.pipe(
             switchMapTo(this.scrollStateChange),
             // Skip updates if we're ignoring scroll updates or item info isn't defined
-            filter(([, , itemWidth, itemHeight]) => !this.renderingViews && ((!!itemWidth || !this.gridList) && !!itemHeight)),
+            filter(([, , itemWidth, itemHeight, scrollContainer]) => {
+                return !this.renderingViews && ((!!itemWidth || !this.gridList) && !!itemHeight)
+                    && scrollContainer.clientWidth > 0 && scrollContainer.clientHeight > 0;
+            }),
         ).subscribe(([
             scrollPosition,
             items,
@@ -321,13 +326,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
             const bufferLengthPx = (scrollContainer.clientHeight) * bufferLength;
 
             // Calculate the number of rendered items per row
-            let itemsPerRow = gridList ? Math.floor(scrollContainer.clientWidth / itemWidth!) : 1;
-
-            // Don't reset items per row to 0 on view change as it invalidates the viewCache
-            if (itemsPerRow === 0 && this._itemsPerRow > 0) {
-                itemsPerRow = this._itemsPerRow;
-            }
-
+            const itemsPerRow = gridList ? Math.floor(scrollContainer.clientWidth / itemWidth!) : 1;
             const virtualScrollHeight = items.length * itemHeight! / itemsPerRow;
 
             // Adjust the bounds by the buffer length and clamp to the edges of the container
