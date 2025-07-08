@@ -449,7 +449,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
 
     private scrollContainerResize(scrollContainer: HTMLElement): Observable<unknown> {
         return new Observable((observer) => {
-            const res = new ResizeObserver(() => this.zone.run(() => observer.next()));
+            const res = new ResizeObserver(() => this.zone.run(() => observer.next(undefined)));
             res.observe(scrollContainer);
             this.onDestroy$.subscribe(() => (res.disconnect(), observer.complete()));
         });
