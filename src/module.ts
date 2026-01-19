@@ -1,11 +1,10 @@
-import { ModuleWithProviders, NgModule, Type } from "@angular/core";
-import { CommonModule } from "@angular/common";
+import { ModuleWithProviders, NgModule } from "@angular/core";
 import { VirtualScroll } from "./components/virtual-scroll/virtual-scroll.component";
 import { VirtualItem } from "./directives/virtual-item.directive";
 import { VirtualPlaceholder } from "./directives/virtual-placeholder.directive";
 import { LI_VIRTUAL_SCROLL_STRATEGY } from "./components/virtual-scroll/scroll-strategy/virtual-scroll-strategy.token";
 import { DefaultVirtualScrollStrategy } from "./components/virtual-scroll/scroll-strategy/default-virtual-scroll-strategy";
-import { VirtualScrollStrategy } from "./components/virtual-scroll/scroll-strategy/virtual-scroll-strategy";
+import { NgxVirtualScrollOptions } from "./providers";
 
 const EXPORTS = [
     VirtualScroll,
@@ -14,21 +13,18 @@ const EXPORTS = [
 ];
 
 @NgModule({
-    imports: [
-        CommonModule
-    ],
+    imports: EXPORTS,
     providers: [
         {
             provide: LI_VIRTUAL_SCROLL_STRATEGY,
             useClass: DefaultVirtualScrollStrategy
         }
     ],
-    declarations: EXPORTS,
     exports: EXPORTS
 })
 export class NgxVirtualScrollModule {
 
-    public static withOptions(options: NgxVirtualScrollModule.Options): ModuleWithProviders<NgxVirtualScrollModule> {
+    public static withOptions(options: NgxVirtualScrollOptions): ModuleWithProviders<NgxVirtualScrollModule> {
         return {
             ngModule: NgxVirtualScrollModule,
             providers: [
@@ -38,12 +34,5 @@ export class NgxVirtualScrollModule {
                 }] : []
             ]
         };
-    }
-}
-
-export namespace NgxVirtualScrollModule {
-
-    export interface Options {
-        scrollStrategy?: Type<VirtualScrollStrategy<unknown>>;
     }
 }

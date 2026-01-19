@@ -20,7 +20,38 @@ npm install @lithiumjs/angular @lithiumjs/ngx-virtual-scroll
 
 # Usage guide
 
-Import `NgxVirtualScrollModule`. Use the `li-virtual-scroll` component to declare a list with virtual scrolling:
+First, provide a `VirtualScrollStrategy` using the `provideVirtualScrollStrategy` function:
+
+```ts
+import { provideVirtualScrollStrategy } from '@lithiumjs/ngx-virtual-scroll';
+
+bootstrapApplication(AppComponent, {
+    providers: [
+        ...
+        provideVirtualScrollStrategy()
+    ]
+})
+...
+```
+
+You can alternatively import `NgxVirtualScrollModule`.
+
+To create a virtual scroll list from an array, use the `li-virtual-scroll` component:
+
+```ts
+import { VirtualScroll, VirtualItem } from '@lithiumjs/ngx-virtual-scroll';
+
+@Component({
+    selector: 'my-component',
+    ...
+    imports: [
+        ...
+        VirtualScroll,
+        VirtualItem
+    ]
+})
+...
+```
 
 ```html
 <li-virtual-scroll [items]="items">
@@ -74,6 +105,22 @@ If the list being rendered is a grid list with multiple items per row, make sure
 ## Asynchronous view rendering
 
 Asynchronous view rendering can be used to improve scrolling responsiveness for items with complex views. When enabled, a placeholder element will be temporarily be shown while the item is rendered asynchronously. The placeholder element can be customized using the `liVirtualPlaceholder` directive:
+
+```ts
+import { VirtualScroll, VirtualItem, VirtualPlaceholder } from '@lithiumjs/ngx-virtual-scroll';
+
+@Component({
+    selector: 'my-component',
+    ...
+    imports: [
+        ...
+        VirtualScroll,
+        VirtualItem,
+        VirtualPlaceholder
+    ]
+})
+...
+```
 
 ```html
 <li-virtual-scroll [items]="items" [asyncRendering]="true">

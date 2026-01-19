@@ -12,14 +12,23 @@ import {
     Inject,
     Output,
     NgZone,
-    TrackByFunction
+    TrackByFunction,
+    EventEmitter
 } from "@angular/core";
-import { OnDestroy, AfterViewInit, AutoPush, DeclareState, ComponentState, ComponentStateRef, ManagedSubject } from "@lithiumjs/angular";
+import { NgTemplateOutlet } from "@angular/common";
+import {
+    OnDestroy,
+    AfterViewInit,
+    AutoPush,
+    DeclareState,
+    ComponentState,
+    ComponentStateRef,
+    ManagedSubject
+} from "@lithiumjs/angular";
 import { Observable, combineLatest, fromEvent, asyncScheduler, forkJoin, EMPTY, merge, of } from "rxjs";
 import {
     throttleTime,
     tap,
-    switchMapTo,
     filter,
     switchMap,
     map,
@@ -29,8 +38,7 @@ import {
     pairwise,
     delay,
     skip,
-    take,
-    mapTo
+    take
 } from "rxjs/operators";
 import { VirtualItem } from "../../directives/virtual-item.directive";
 import { VirtualPlaceholder } from "../../directives/virtual-placeholder.directive";
@@ -44,9 +52,11 @@ import { delayUntil } from "../../operators/delay-until";
 const TRACK_BY_IDENTITY_FN = <T>(_index: number, item: T) => item;
 
 @Component({
-    standalone: false,
     selector: "li-virtual-scroll",
     changeDetection: ChangeDetectionStrategy.OnPush,
+    imports: [
+        NgTemplateOutlet
+    ],
     providers: [
         {
             provide: LI_VIRTUAL_SCROLL_STATE,
@@ -59,15 +69,12 @@ const TRACK_BY_IDENTITY_FN = <T>(_index: number, item: T) => item;
     },
     template: `
         <div #virtualSpacerBefore class="virtual-spacer virtual-spacer-before"></div>
-        <ng-container #hostView></ng-container>
+        <ng-container #hostView />
         <div #virtualSpacerAfter class="virtual-spacer virtual-spacer-after"></div>
         <ng-template #placeholderTemplate let-item let-index="index">
-            <ng-container *ngIf="virtualPlaceholder; else defaultPlaceholderTemplate">
-                <ng-container *ngTemplateOutlet="virtualPlaceholder.templateRef; context: { $implicit: item, index: index }">
-                </ng-container>
-            </ng-container>
-
-            <ng-template #defaultPlaceholderTemplate>
+            @if (virtualPlaceholder) {
+                <ng-container *ngTemplateOutlet="virtualPlaceholder.templateRef; context: { $implicit: item, index: index }" />
+            } @else {
                 <div class="virtual-placeholder"
                     [style.width]="gridList ? itemWidth + 'px' : null"
                     [style.max-width]="gridList ? itemWidth + 'px' : null"
@@ -75,7 +82,7 @@ const TRACK_BY_IDENTITY_FN = <T>(_index: number, item: T) => item;
                     [style.max-height]="itemHeight + 'px'"
                     [style.margin]="0">
                 </div>
-            </ng-template>
+            }
         </ng-template>
     `,
     styles: [
@@ -92,7 +99,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
     public readonly recalculateItemSize$ = new ManagedSubject<void>(this);
 
     @Output("renderedItemsChange")
-    public readonly renderedItemsChange$ = this.stateRef.emitter("renderedItems");
+    public readonly renderedItemsChange$: EventEmitter<T[]>;
 
     @Input()
     public items: T[] = [];
@@ -188,6 +195,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
     ) {
         AutoPush.enable(this, cdRef);
 
+        this.renderedItemsChange$ = this.stateRef.emitter("renderedItems");
         this._scrollContainer = this._listElement = listElement;
 
         // Update the current scroll position on scroll changes
@@ -302,7 +310,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
 
         // Recalculate rendered items on scroll state changes
         this.afterViewInit$.pipe(
-            switchMapTo(this.scrollStateChange),
+            switchMap(() => this.scrollStateChange),
             // Skip updates if we're ignoring scroll updates or item info isn't defined
             filter(([, , itemWidth, itemHeight, scrollContainer]) => {
                 return !this.renderingViews && ((!!itemWidth || !this.gridList) && !!itemHeight)
@@ -414,7 +422,7 @@ export class VirtualScroll<T> implements VirtualScrollState<T> {
     public get waitForRenderComplete(): Observable<void> {
         return this.stateRef.get("renderingViews").pipe(
             filter(rendering => !rendering),
-            mapTo(undefined),
+            map(() => undefined),
             take(1)
         );
     }

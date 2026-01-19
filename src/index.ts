@@ -1,4 +1,5 @@
 export * from "./module";
+export * from "./providers";
 export * from "./components/virtual-scroll/scroll-state/virtual-scroll-state";
 export * from "./components/virtual-scroll/scroll-state/virtual-scroll-state.token";
 export * from "./components/virtual-scroll/scroll-strategy/default-virtual-scroll-strategy";

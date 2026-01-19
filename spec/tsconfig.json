@@ -11,7 +11,7 @@
         "emitDecoratorMetadata": false,
         "experimentalDecorators": true,
         "module": "esnext",
-        "moduleResolution": "node",
+        "moduleResolution": "bundler",
         "target": "es2015",
         "outDir": "./build",
         "rootDir": "..",
@@ -25,6 +25,7 @@
         "./**/*.ts"
     ],
     "exclude": [
+        "build",
         "support"
     ],
     "typeRoots": [
@@ -32,6 +33,7 @@
     ],
     "angularCompilerOptions": {
         "genDir": "build",
+        "strictTemplates": true,
         "skipTemplateCodegen": true
     }
 }

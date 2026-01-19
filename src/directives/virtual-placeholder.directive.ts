@@ -1,7 +1,6 @@
 import { Directive, TemplateRef } from "@angular/core";
 
 @Directive({
-    standalone: false,
     selector: "[liVirtualPlaceholder]"
 })
 export class VirtualPlaceholder<T> {
